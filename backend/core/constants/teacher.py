@@ -22,3 +22,18 @@ class TeacherStatus(models.TextChoices):
     SUSPENDED = "SUSPENDED", _("Suspended")
     RESIGNED = "RESIGNED", _("Resigned")
     RETIRED = "RETIRED", _("Retired")
+
+from django.db import models
+from django.utils.translation import gettext_lazy as _
+
+
+class QualificationType(models.TextChoices):
+    """
+    Types of professional qualifications.
+    """
+
+    DEGREE = "DEGREE", _("Degree")
+    DIPLOMA = "DIPLOMA", _("Diploma")
+    CERTIFICATE = "CERTIFICATE", _("Certificate")
+    LICENSE = "LICENSE", _("Teaching License")
+    TRAINING = "TRAINING", _("Professional Training")
