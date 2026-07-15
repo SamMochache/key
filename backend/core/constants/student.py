@@ -54,3 +54,19 @@ class BloodGroup(models.TextChoices):
     O_POSITIVE = "O+", _("O+")
     O_NEGATIVE = "O-", _("O-")
     UNKNOWN = "UNKNOWN", _("Unknown")
+
+class EmergencyRelationship(models.TextChoices):
+    """
+    Relationship between the student and an emergency contact.
+    """
+
+    FATHER = "FATHER", _("Father")
+    MOTHER = "MOTHER", _("Mother")
+    GUARDIAN = "GUARDIAN", _("Guardian")
+    GRANDPARENT = "GRANDPARENT", _("Grandparent")
+    UNCLE = "UNCLE", _("Uncle")
+    AUNT = "AUNT", _("Aunt")
+    SIBLING = "SIBLING", _("Sibling")
+    NEIGHBOR = "NEIGHBOR", _("Neighbor")
+    FAMILY_FRIEND = "FAMILY_FRIEND", _("Family Friend")
+    OTHER = "OTHER", _("Other")
