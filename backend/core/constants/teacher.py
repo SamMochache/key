@@ -37,3 +37,15 @@ class QualificationType(models.TextChoices):
     CERTIFICATE = "CERTIFICATE", _("Certificate")
     LICENSE = "LICENSE", _("Teaching License")
     TRAINING = "TRAINING", _("Professional Training")
+
+from django.db import models
+from django.utils.translation import gettext_lazy as _
+
+
+class TeacherRole(models.TextChoices):
+    """
+    Teacher's role within a subject assignment.
+    """
+
+    LEAD = "LEAD", _("Lead Teacher")
+    ASSISTANT = "ASSISTANT", _("Assistant Teacher")
