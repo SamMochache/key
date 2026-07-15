@@ -5,6 +5,7 @@ from .timetable import TimetableStatus
 from .teacher import TeacherStatus
 from .lesson import LessonStatus
 from .attendance import AttendanceStatus,RegisterStatus
+from .assessment import AssessmentStatus
 
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "LessonStatus",
     "AttendanceStatus"
     "RegisterStatus"
+    "AssessmentStatus"
 ]
