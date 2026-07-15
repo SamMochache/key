@@ -6,6 +6,7 @@ from .teacher import TeacherStatus
 from .lesson import LessonStatus
 from .attendance import AttendanceStatus,RegisterStatus
 from .assessment import AssessmentStatus
+from .competency import CompetencyLevel
 
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "AttendanceStatus"
     "RegisterStatus"
     "AssessmentStatus"
+    "CompetencyLevel"
 ]

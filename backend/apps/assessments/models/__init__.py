@@ -1,4 +1,6 @@
 from .assessment import Assessment
+from .competency import Competency
+from .competency_evaluation import CompetencyEvaluation
 from .criterion_score import CriterionScore
 from .evaluation import AssessmentEvaluation
 from .rubric import Rubric
@@ -12,4 +14,6 @@ __all__ = [
     "RubricCriterion",
     "AssessmentEvaluation",
     "CriterionScore",
+    "Competency",
+    "CompetencyEvaluation",
 ]
