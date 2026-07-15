@@ -70,3 +70,31 @@ class EmergencyRelationship(models.TextChoices):
     NEIGHBOR = "NEIGHBOR", _("Neighbor")
     FAMILY_FRIEND = "FAMILY_FRIEND", _("Family Friend")
     OTHER = "OTHER", _("Other")
+
+from django.db import models
+from django.utils.translation import gettext_lazy as _
+
+
+class DocumentType(models.TextChoices):
+    """
+    Supported student document types.
+    """
+
+    BIRTH_CERTIFICATE = "BIRTH_CERTIFICATE", _("Birth Certificate")
+    PASSPORT = "PASSPORT", _("Passport")
+    PASSPORT_PHOTO = "PASSPORT_PHOTO", _("Passport Photo")
+    PREVIOUS_REPORT = "PREVIOUS_REPORT", _("Previous School Report")
+    TRANSFER_LETTER = "TRANSFER_LETTER", _("Transfer Letter")
+    IMMUNIZATION_RECORD = "IMMUNIZATION_RECORD", _("Immunization Record")
+    MEDICAL_REPORT = "MEDICAL_REPORT", _("Medical Report")
+    CONSENT_FORM = "CONSENT_FORM", _("Parent Consent Form")
+    OTHER = "OTHER", _("Other")
+
+class DocumentStatus(models.TextChoices):
+    """
+    Verification status of a student document.
+    """
+
+    PENDING = "PENDING", _("Pending")
+    VERIFIED = "VERIFIED", _("Verified")
+    REJECTED = "REJECTED", _("Rejected")
