@@ -35,3 +35,22 @@ class GuardianRelationship(models.TextChoices):
     AUNT = "AUNT", _("Aunt")
     SIBLING = "SIBLING", _("Sibling")
     OTHER = "OTHER", _("Other")
+
+from django.db import models
+from django.utils.translation import gettext_lazy as _
+
+
+class BloodGroup(models.TextChoices):
+    """
+    Supported blood groups.
+    """
+
+    A_POSITIVE = "A+", _("A+")
+    A_NEGATIVE = "A-", _("A-")
+    B_POSITIVE = "B+", _("B+")
+    B_NEGATIVE = "B-", _("B-")
+    AB_POSITIVE = "AB+", _("AB+")
+    AB_NEGATIVE = "AB-", _("AB-")
+    O_POSITIVE = "O+", _("O+")
+    O_NEGATIVE = "O-", _("O-")
+    UNKNOWN = "UNKNOWN", _("Unknown")
