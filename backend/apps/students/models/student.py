@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from apps.accounts.models import User
+from apps.identity.models import User
 from apps.schools.models import School
 from core.models import BaseModel
 from core.constants.student import Gender
@@ -37,10 +37,10 @@ class Student(BaseModel):
     date_of_birth = models.DateField()
 
     gender = models.CharField(
-    _("Gender"),
-    max_length=10,
-    choices=Gender.choices,
-)
+        _("Gender"),
+        max_length=10,
+        choices=Gender.choices,
+    )
 
     nationality = models.CharField(
         _("Nationality"),

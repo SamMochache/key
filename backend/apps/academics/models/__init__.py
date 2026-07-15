@@ -6,6 +6,7 @@ from .programme import Programme
 from .subject import Subject
 from .term import Term
 from .stage_subject import StageSubject
+from .classroom import Classroom
 
 __all__ = [
     "AcademicYear",
@@ -16,4 +17,5 @@ __all__ = [
     "Subject",
     "Term",
     "StageSubject",
+    "Classroom"
 ]
