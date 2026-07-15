@@ -45,6 +45,7 @@ LOCAL_APPS = [
     "apps.academics",
     "apps.enrollment",
     "apps.teachers",
+    "apps.lessons",
 ]
 
 INSTALLED_APPS = (

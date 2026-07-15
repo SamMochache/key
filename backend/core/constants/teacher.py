@@ -49,3 +49,16 @@ class TeacherRole(models.TextChoices):
 
     LEAD = "LEAD", _("Lead Teacher")
     ASSISTANT = "ASSISTANT", _("Assistant Teacher")
+
+
+from django.db import models
+from django.utils.translation import gettext_lazy as _
+
+
+class ClassroomRole(models.TextChoices):
+    """
+    Role of a teacher within a classroom.
+    """
+
+    HOMEROOM = "HOMEROOM", _("Homeroom Teacher")
+    ASSISTANT = "ASSISTANT", _("Assistant Teacher")
