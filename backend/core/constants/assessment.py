@@ -24,3 +24,10 @@ class AssessmentStatus(models.TextChoices):
     DRAFT = "DRAFT", _("Draft")
     PUBLISHED = "PUBLISHED", _("Published")
     CLOSED = "CLOSED", _("Closed")
+
+class SubmissionStatus(models.TextChoices): 
+    """ Workflow state of an assessment submission. """
+    DRAFT = "DRAFT", _("Draft") 
+    SUBMITTED = "SUBMITTED", _("Submitted") 
+    RETURNED = "RETURNED", _("Returned") 
+    GRADED = "GRADED", _("Graded")
