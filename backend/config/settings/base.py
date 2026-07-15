@@ -40,6 +40,9 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "apps.identity",
+    "apps.schools",
+    'core',
+    "apps.academics",
 ]
 
 INSTALLED_APPS = (
