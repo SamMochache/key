@@ -1,8 +1,8 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from core.models import BaseModel
 from apps.schools.models import School
+from core.models import BaseModel
 
 
 class AcademicYear(BaseModel):
@@ -31,8 +31,16 @@ class AcademicYear(BaseModel):
 
     class Meta:
         db_table = "academic_years"
+        verbose_name = _("Academic Year")
+        verbose_name_plural = _("Academic Years")
         ordering = ["-start_date"]
-        unique_together = ("school", "name")
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "name"],
+                name="unique_academic_year_per_school",
+            )
+        ]
 
     def __str__(self):
         return self.name
