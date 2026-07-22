@@ -21,7 +21,7 @@ class Portfolio(BaseModel):
         blank=True,
     )
 
-    class Meta:
+    class Meta: # type: ignore
         db_table = "portfolios"
 
         verbose_name = _("Portfolio")

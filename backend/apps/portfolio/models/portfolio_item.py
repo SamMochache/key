@@ -51,7 +51,7 @@ class PortfolioItem(BaseModel):
 
     event_date = models.DateField()
 
-    class Meta:
+    class Meta: # type: ignore
         db_table = "portfolio_items"
 
         ordering = [

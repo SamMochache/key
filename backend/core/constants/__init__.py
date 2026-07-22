@@ -7,6 +7,8 @@ from .lesson import LessonStatus
 from .attendance import AttendanceStatus,RegisterStatus
 from .assessment import AssessmentStatus
 from .competency import CompetencyLevel
+from .report import ReportStatus
+from .report_generation import GenerationStatus
 
 
 __all__ = [
@@ -15,10 +17,12 @@ __all__ = [
     "UserStatus",
     "EnrollmentStatus",
     "TimetableStatus",
-    "TeacherStatus"
+    "TeacherStatus",
     "LessonStatus",
-    "AttendanceStatus"
-    "RegisterStatus"
-    "AssessmentStatus"
-    "CompetencyLevel"
+    "AttendanceStatus",
+    "RegisterStatus",
+    "AssessmentStatus",
+    "CompetencyLevel",
+    "GenerationStatus",
+    "ReportStatus",
 ]

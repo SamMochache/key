@@ -26,7 +26,7 @@ class Artifact(BaseModel):
         blank=True,
     )
 
-    class Meta:
+    class Meta: # type: ignore
         db_table = "portfolio_artifacts"
 
     def __str__(self):
