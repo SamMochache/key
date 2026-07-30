@@ -12,9 +12,6 @@ class GenerationStatus(models.TextChoices):
     COMPLETED = "COMPLETED", _("Completed")
     FAILED = "FAILED", _("Failed")
 
-from django.db import models
-from django.utils.translation import gettext_lazy as _
-
 
 class ReportStatus(models.TextChoices):
     """
