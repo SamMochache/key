@@ -1,6 +1,14 @@
 from rest_framework import serializers
 
-from .models import Assessment, AssessmentEvaluation, AssessmentSubmission, CompetencyEvaluation, CriterionScore, Rubric, RubricCriterion
+from .models import (
+    Assessment,
+    AssessmentEvaluation,
+    AssessmentSubmission,
+    CompetencyEvaluation,
+    CriterionScore,
+    Rubric,
+    RubricCriterion,
+)
 
 
 class RubricCriterionSerializer(serializers.ModelSerializer):
@@ -20,7 +28,10 @@ class RubricSerializer(serializers.ModelSerializer):
 class AssessmentSerializer(serializers.ModelSerializer):
     rubric = RubricSerializer(read_only=True)
     teacher_name = serializers.CharField(source="teacher.user.full_name", read_only=True)
-    lesson_session_title = serializers.CharField(source="lesson_session.title", read_only=True)
+    lesson_session_title = serializers.SerializerMethodField()
+
+    def get_lesson_session_title(self, obj):
+        return str(obj.lesson_session)
 
     class Meta:
         model = Assessment
