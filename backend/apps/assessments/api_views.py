@@ -9,6 +9,8 @@ from rest_framework.response import Response
 
 from apps.students.models import Student
 
+from core.constants.assessment import SubmissionStatus
+
 from .models import (
     Assessment,
     AssessmentEvaluation,
@@ -108,7 +110,7 @@ class AssessmentSubmissionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
             submission = self.get_object()
             if submission.enrollment.student.user_id != self.request.user.id:
                 raise PermissionDenied("You can only edit your own submission.")
-            if submission.status == "graded":
+            if submission.status == SubmissionStatus.GRADED:
                 raise PermissionDenied("A graded submission cannot be edited.")
         serializer.save()
 
@@ -156,10 +158,8 @@ class AssessmentEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
 
     @transaction.atomic
     def _recalculate(self, evaluation):
-        scores = evaluation.criterion_scores.select_related("criterion")
-        total = scores.aggregate(total=Sum("score"))["total"] or 0
+        total = evaluation.criterion_scores.aggregate(total=Sum("score"))["total"] or 0
         maximum = evaluation.submission.assessment.maximum_score
-
         if maximum is None:
             maximum = evaluation.submission.assessment.rubric.criteria.aggregate(
                 total=Sum("maximum_score")
@@ -181,7 +181,7 @@ class AssessmentEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
         self._recalculate(evaluation)
         evaluation.published = True
         evaluation.published_at = timezone.now()
-        evaluation.submission.status = "graded"
+        evaluation.submission.status = SubmissionStatus.GRADED
         evaluation.submission.save(update_fields=["status", "updated_at"])
         evaluation.save(update_fields=["published", "published_at", "updated_at"])
         return Response(self.get_serializer(evaluation).data)
@@ -199,20 +199,25 @@ class CriterionScoreViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
         )
         return self.filter_school(queryset, "evaluation__submission__enrollment__student__school")
 
-    def perform_create(self, serializer):
-        score = serializer.validated_data.get("score")
-        criterion = serializer.validated_data.get("criterion")
+    def _validate_score(self, score, criterion):
+        if score is not None and score < 0:
+            raise PermissionDenied("Score cannot be negative.")
         if score is not None and criterion is not None and score > criterion.maximum_score:
             raise PermissionDenied("Score cannot exceed the criterion maximum.")
+
+    def perform_create(self, serializer):
+        self._validate_score(
+            serializer.validated_data.get("score"),
+            serializer.validated_data.get("criterion"),
+        )
         serializer.save()
-        evaluation = serializer.instance.evaluation
-        self._recalculate(evaluation)
+        self._recalculate(serializer.instance.evaluation)
 
     def perform_update(self, serializer):
-        score = serializer.validated_data.get("score", serializer.instance.score)
-        criterion = serializer.validated_data.get("criterion", serializer.instance.criterion)
-        if score is not None and criterion is not None and score > criterion.maximum_score:
-            raise PermissionDenied("Score cannot exceed the criterion maximum.")
+        self._validate_score(
+            serializer.validated_data.get("score", serializer.instance.score),
+            serializer.validated_data.get("criterion", serializer.instance.criterion),
+        )
         serializer.save()
         self._recalculate(serializer.instance.evaluation)
 
