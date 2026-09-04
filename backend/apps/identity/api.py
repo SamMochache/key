@@ -20,14 +20,14 @@ class CurrentUserView(APIView):
             "timezone": user.timezone,
             "status": user.status,
         }
-        if hasattr(user, "teacher_profile"):
+        if user.is_superuser or user.is_staff:
+            data["role"] = "admin"
+        elif hasattr(user, "teacher_profile"):
             data["role"] = "teacher"
             data["school_id"] = str(user.teacher_profile.school_id)
         elif hasattr(user, "student_profile"):
             data["role"] = "student"
             data["school_id"] = str(user.student_profile.school_id)
-        elif user.is_superuser:
-            data["role"] = "admin"
         else:
             data["role"] = "user"
         return Response(data)
