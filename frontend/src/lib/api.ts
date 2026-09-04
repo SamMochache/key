@@ -125,8 +125,10 @@ export async function listSubmissions() {
 }
 
 export async function getDashboardSummary() {
-  const data = await request<Paginated<DashboardSummary> | DashboardSummary[]>('/dashboard-summary/');
-  return Array.isArray(data) ? data[0] : data.results[0];
+  const data = await request<DashboardSummary | Paginated<DashboardSummary> | DashboardSummary[]>('/dashboard-summary/');
+  if (Array.isArray(data)) return data[0];
+  if ('results' in data) return data.results[0];
+  return data;
 }
 
 export { API_BASE_URL };
