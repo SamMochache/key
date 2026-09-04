@@ -47,12 +47,12 @@ class AcademicYearAdmin(admin.ModelAdmin):
 @admin.register(Term)
 class TermAdmin(admin.ModelAdmin):
     list_display = (
-        "name",
-        "academic_year",
         "term_number",
+        "academic_year",
         "start_date",
         "end_date",
         "is_current",
+        "is_active",
     )
 
     list_filter = (
@@ -91,6 +91,7 @@ class MontessoriLevelAdmin(admin.ModelAdmin):
         "is_active",
     )
 
+
 from .models import CambridgeStage, Programme
 
 
@@ -99,14 +100,12 @@ class ProgrammeAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "curriculum",
-        "code",
         "display_order",
         "is_active",
     )
 
     search_fields = (
         "name",
-        "code",
     )
 
     list_filter = (
@@ -143,9 +142,9 @@ class CambridgeStageAdmin(admin.ModelAdmin):
         "display_order",
     )
 
+
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
-
     list_display = (
         "name",
         "code",
@@ -170,9 +169,9 @@ class SubjectAdmin(admin.ModelAdmin):
         "name",
     )
 
+
 @admin.register(StageSubject)
 class StageSubjectAdmin(admin.ModelAdmin):
-
     list_display = (
         "cambridge_stage",
         "subject",
