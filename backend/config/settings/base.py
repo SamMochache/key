@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 
 from dotenv import load_dotenv
+import dj_database_url
 
 load_dotenv()
 
@@ -11,11 +12,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Security
 # -----------------------------------------------------------------------------
 
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY") or os.getenv("SECRET_KEY")
 
-DEBUG = False
+if not SECRET_KEY:
+    raise RuntimeError("DJANGO_SECRET_KEY (or SECRET_KEY) must be set")
 
-ALLOWED_HOSTS = []
+DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() in {"1", "true", "yes", "on"}
+
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
+    if host.strip()
+]
 
 # -----------------------------------------------------------------------------
 # Applications
@@ -41,7 +49,7 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     "apps.identity",
     "apps.schools",
-    'core',
+    "core",
     "apps.academics",
     "apps.enrollment",
     "apps.teachers",
@@ -53,11 +61,7 @@ LOCAL_APPS = [
     "apps.portfolio",
 ]
 
-INSTALLED_APPS = (
-    DJANGO_APPS
-    + THIRD_PARTY_APPS
-    + LOCAL_APPS
-)
+INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 # -----------------------------------------------------------------------------
 # Middleware
@@ -78,7 +82,6 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 
 WSGI_APPLICATION = "config.wsgi.application"
-
 ASGI_APPLICATION = "config.asgi.application"
 
 # -----------------------------------------------------------------------------
@@ -104,15 +107,18 @@ TEMPLATES = [
 # Database
 # -----------------------------------------------------------------------------
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL must be set")
+
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("POSTGRES_DB"),
-        "USER": os.getenv("POSTGRES_USER"),
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
-        "HOST": os.getenv("POSTGRES_HOST"),
-        "PORT": os.getenv("POSTGRES_PORT"),
-    }
+    "default": dj_database_url.parse(
+        DATABASE_URL,
+        conn_max_age=0,
+        conn_health_checks=True,
+        ssl_require=True,
+    )
 }
 
 # -----------------------------------------------------------------------------
@@ -156,6 +162,22 @@ REST_FRAMEWORK = {
 }
 
 # -----------------------------------------------------------------------------
+# CORS / CSRF
+# -----------------------------------------------------------------------------
+
+CORS_ALLOWED_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+# -----------------------------------------------------------------------------
 # OpenAPI
 # -----------------------------------------------------------------------------
 
@@ -170,24 +192,38 @@ SPECTACULAR_SETTINGS = {
 # -----------------------------------------------------------------------------
 
 LANGUAGE_CODE = "en-us"
-
 TIME_ZONE = "Africa/Nairobi"
-
 USE_I18N = True
-
 USE_TZ = True
 
 # -----------------------------------------------------------------------------
-# Static Files
+# Static / Media Files
 # -----------------------------------------------------------------------------
 
 STATIC_URL = "/static/"
-
 STATIC_ROOT = BASE_DIR / "staticfiles"
-
 MEDIA_URL = "/media/"
-
 MEDIA_ROOT = BASE_DIR / "media"
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+# -----------------------------------------------------------------------------
+# Production security defaults
+# -----------------------------------------------------------------------------
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
 
 # -----------------------------------------------------------------------------
 # Default Primary Key
