@@ -21,7 +21,6 @@ class Term(BaseModel):
         _("Term Number"),
     )
 
-    
     start_date = models.DateField()
 
     end_date = models.DateField()
@@ -48,4 +47,4 @@ class Term(BaseModel):
         ]
 
     def __str__(self):
-        return f"{self.academic_year.name} - {self.name}"
+        return f"{self.academic_year.name} - Term {self.term_number}"
