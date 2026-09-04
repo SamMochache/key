@@ -6,7 +6,6 @@ from core.models import BaseModel
 
 from .academic_year import AcademicYear
 from .term import Term
-from .programme import Programme
 from .cambridge_stage import CambridgeStage
 from .montessori_level import MontessoriLevel
 
@@ -33,7 +32,6 @@ class Classroom(BaseModel):
         on_delete=models.PROTECT,
         related_name="classrooms",
     )
-
 
     cambridge_stage = models.ForeignKey(
         CambridgeStage,
@@ -74,7 +72,6 @@ class Classroom(BaseModel):
         verbose_name_plural = _("Classrooms")
         ordering = [
             "academic_year",
-            "programme",
             "cambridge_stage",
             "name",
         ]
