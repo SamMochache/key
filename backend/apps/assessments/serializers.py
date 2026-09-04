@@ -9,7 +9,7 @@ from .models import (
     Rubric,
     RubricCriterion,
 )
-from .permissions import UserRole, get_user_role
+from .permissions import UserRole, get_user_role, get_user_school
 
 
 class RubricCriterionSerializer(serializers.ModelSerializer):
@@ -127,6 +127,14 @@ class CriterionScoreSerializer(serializers.ModelSerializer):
         if score is not None and criterion is not None and score > criterion.maximum_score:
             raise serializers.ValidationError({"score": "Score cannot exceed the criterion maximum."})
 
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        school = get_user_school(user)
+        if school is not None and evaluation is not None:
+            submission_school_id = evaluation.submission.enrollment.student.school_id
+            if submission_school_id != school.id:
+                raise serializers.ValidationError("You cannot score a submission from another institution.")
+
         return attrs
 
     class Meta:
@@ -137,6 +145,19 @@ class CriterionScoreSerializer(serializers.ModelSerializer):
 
 class CompetencyEvaluationSerializer(serializers.ModelSerializer):
     competency_name = serializers.CharField(source="competency.name", read_only=True)
+
+    def validate(self, attrs):
+        evaluation = attrs.get("evaluation", getattr(self.instance, "evaluation", None))
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        school = get_user_school(user)
+        if school is not None and evaluation is not None:
+            submission_school_id = evaluation.submission.enrollment.student.school_id
+            if submission_school_id != school.id:
+                raise serializers.ValidationError(
+                    "You cannot evaluate a submission from another institution."
+                )
+        return attrs
 
     class Meta:
         model = CompetencyEvaluation
@@ -153,12 +174,28 @@ class AssessmentEvaluationSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(source="submission.enrollment.student.user.full_name", read_only=True)
 
     def validate(self, attrs):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        role = get_user_role(user)
         submission = attrs.get("submission", getattr(self.instance, "submission", None))
         if submission is None:
             return attrs
 
         if self.instance is not None and submission != self.instance.submission:
             raise serializers.ValidationError({"submission": "An evaluation cannot be moved to another submission."})
+
+        school = get_user_school(user)
+        if school is not None and submission.enrollment.student.school_id != school.id:
+            raise serializers.ValidationError(
+                {"submission": "You cannot evaluate a submission from another institution."}
+            )
+
+        if role == UserRole.TEACHER:
+            teacher = getattr(user, "teacher_profile", None)
+            if teacher is not None and submission.assessment.teacher_id != teacher.id:
+                raise serializers.ValidationError(
+                    {"submission": "Teachers can only evaluate assessments assigned to them."}
+                )
 
         return attrs
 
