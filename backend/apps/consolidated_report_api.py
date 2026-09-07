@@ -2,21 +2,18 @@ from io import BytesIO
 
 from django.db.models import Avg
 from django.http import FileResponse, JsonResponse
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Paragraph, Spacer
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
 
 from apps.academics.models import AcademicYear, Classroom, Term
-from apps.assessments.models import AssessmentEvaluation, AssessmentSubmission, CompetencyEvaluation
+from apps.assessments.models import AssessmentSubmission, CompetencyEvaluation
 from apps.assessments.permissions import UserRole, get_user_role, get_user_school
 from apps.attendance.models import AttendanceRecord
 from apps.enrollment.models import Enrollment
-from apps.portfolio.models import Artifact, PortfolioItem
+from apps.portfolio.models import PortfolioItem
+from apps.reporting.pdf import build_document, data_table, info_table, report_header, report_styles, summary_table, footer
 
 
 LEVEL_SCALE = {"BEGINNING": 1, "DEVELOPING": 2, "PROFICIENT": 3, "ADVANCED": 4}
@@ -30,7 +27,6 @@ class ConsolidatedReportView(views.APIView):
         role = get_user_role(request.user)
         if role not in {UserRole.ADMIN, UserRole.TEACHER}:
             raise PermissionDenied("Only staff can access consolidated reports.")
-
         school = get_user_school(request.user)
         if school is None and role != UserRole.ADMIN:
             raise PermissionDenied("Your account is not associated with an institution.")
@@ -39,7 +35,6 @@ class ConsolidatedReportView(views.APIView):
         term_id = request.query_params.get("term")
         classroom_id = request.query_params.get("classroom")
         student_id = request.query_params.get("student")
-
         if not year_id or not term_id:
             return JsonResponse({"detail": "Academic year and term are required."}, status=400)
 
@@ -59,9 +54,7 @@ class ConsolidatedReportView(views.APIView):
                 return JsonResponse({"detail": "The classroom does not belong to the selected academic period."}, status=400)
 
         enrollments = Enrollment.objects.select_related("student", "classroom").filter(
-            academic_year_id=year.id,
-            term_id=term.id,
-            status__in=["ACTIVE", "COMPLETED"],
+            academic_year_id=year.id, term_id=term.id, status__in=["ACTIVE", "COMPLETED"]
         )
         if school is not None:
             enrollments = enrollments.filter(classroom__school=school)
@@ -70,18 +63,15 @@ class ConsolidatedReportView(views.APIView):
         if student_id:
             enrollments = enrollments.filter(student_id=student_id)
         enrollments = enrollments.order_by("student__admission_number")
-
         if not enrollments.exists():
             return JsonResponse({"detail": "No matching enrolled students were found."}, status=404)
 
         enrollment_ids = list(enrollments.values_list("id", flat=True))
         submissions = AssessmentSubmission.objects.filter(
-            enrollment_id__in=enrollment_ids,
-            evaluation__published=True,
-            assessment__status="PUBLISHED",
+            enrollment_id__in=enrollment_ids, evaluation__published=True, assessment__status="PUBLISHED"
         ).select_related("evaluation")
         assessment_scores = {}
-        for row in submissions.values("enrollment_id").annotate(average=Avg("evaluation__percentage"), count=Avg("evaluation__percentage")):
+        for row in submissions.values("enrollment_id").annotate(average=Avg("evaluation__percentage")):
             assessment_scores[row["enrollment_id"]] = row["average"]
         assessment_counts = {}
         for enrollment_id in submissions.values_list("enrollment_id", flat=True):
@@ -95,16 +85,14 @@ class ConsolidatedReportView(views.APIView):
             attended = records.filter(status__in=["PRESENT", "LATE"]).count()
             attendance_data[enrollment_id] = round(attended * 100 / total, 1) if total else None
 
-        competencies = CompetencyEvaluation.objects.filter(
-            evaluation__submission__enrollment_id__in=enrollment_ids,
-            evaluation__published=True,
-        )
         competency_data = {}
-        for item in competencies.values("evaluation__submission__enrollment_id", "level"):
+        for item in CompetencyEvaluation.objects.filter(
+            evaluation__submission__enrollment_id__in=enrollment_ids, evaluation__published=True
+        ).values("evaluation__submission__enrollment_id", "level"):
             competency_data.setdefault(item["evaluation__submission__enrollment_id"], []).append(item["level"])
 
         portfolio_items = PortfolioItem.objects.filter(
-            portfolio__student_id__in=enrollments.values_list("student_id", flat=True),
+            portfolio__student_id__in=enrollments.values_list("student_id", flat=True)
         ).prefetch_related("artifacts")
         portfolio_counts = {}
         artifact_counts = {}
@@ -114,36 +102,25 @@ class ConsolidatedReportView(views.APIView):
             artifact_counts[student_key] = artifact_counts.get(student_key, 0) + item.artifacts.count()
 
         rows = []
-        total_scores = []
-        attendance_rates = []
-        competency_proficient = []
-        total_items = 0
-        total_artifacts = 0
+        total_scores, attendance_rates, competency_proficient = [], [], []
+        total_items = total_artifacts = 0
         for enrollment in enrollments:
             score = assessment_scores.get(enrollment.id)
             attendance_rate = attendance_data.get(enrollment.id)
-            levels = competency_data.get(next((s.id for s in submissions if s.enrollment_id == enrollment.id), None), [])
-            # Re-querying competency by enrollment keeps the aggregation correct when a learner has multiple submissions.
-            levels = list(CompetencyEvaluation.objects.filter(evaluation__submission__enrollment_id=enrollment.id, evaluation__published=True).values_list("level", flat=True))
+            levels = competency_data.get(enrollment.id, [])
             proficient = round(sum(level in {"PROFICIENT", "ADVANCED"} for level in levels) * 100 / len(levels), 1) if levels else None
             items = portfolio_counts.get(enrollment.student_id, 0)
             artifacts = artifact_counts.get(enrollment.student_id, 0)
             rows.append([
-                enrollment.student.admission_number,
-                str(enrollment.student),
+                enrollment.student.admission_number, str(enrollment.student),
                 f"{float(score):.1f}%" if score is not None else "—",
                 f"{attendance_rate:.1f}%" if attendance_rate is not None else "—",
                 f"{proficient:.1f}%" if proficient is not None else "—",
-                str(assessment_counts.get(enrollment.id, 0)),
-                str(items),
-                str(artifacts),
+                str(assessment_counts.get(enrollment.id, 0)), str(items), str(artifacts),
             ])
-            if score is not None:
-                total_scores.append(float(score))
-            if attendance_rate is not None:
-                attendance_rates.append(attendance_rate)
-            if proficient is not None:
-                competency_proficient.append(proficient)
+            if score is not None: total_scores.append(float(score))
+            if attendance_rate is not None: attendance_rates.append(attendance_rate)
+            if proficient is not None: competency_proficient.append(proficient)
             total_items += items
             total_artifacts += artifacts
 
@@ -152,37 +129,28 @@ class ConsolidatedReportView(views.APIView):
             "assessment_average": sum(total_scores) / len(total_scores) if total_scores else None,
             "attendance_average": sum(attendance_rates) / len(attendance_rates) if attendance_rates else None,
             "competency_average": sum(competency_proficient) / len(competency_proficient) if competency_proficient else None,
-            "portfolio_items": total_items,
-            "artifacts": total_artifacts,
+            "portfolio_items": total_items, "artifacts": total_artifacts,
         }
         return self._build_pdf(school, classroom, year, term, summary, rows)
 
     def _build_pdf(self, school, classroom, year, term, summary, rows):
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=10 * mm, leftMargin=10 * mm, topMargin=12 * mm, bottomMargin=12 * mm, title="Consolidated Academic Report", author="KEY")
-        styles = getSampleStyleSheet()
-        title = ParagraphStyle("ConsolidatedTitle", parent=styles["Title"], alignment=TA_CENTER, fontSize=18, leading=22, spaceAfter=4 * mm)
-        heading = ParagraphStyle("ConsolidatedHeading", parent=styles["Heading2"], fontSize=11, leading=14, spaceBefore=4 * mm, spaceAfter=2 * mm)
-        small = ParagraphStyle("ConsolidatedSmall", parent=styles["BodyText"], fontSize=7.5, leading=9)
-
-        story = [Paragraph(school.name if school else "KEY", title), Paragraph("Consolidated Academic Report", styles["Heading1"])]
+        doc = build_document(buffer, landscape_mode=True, title="Consolidated Academic Report")
+        styles = report_styles()
+        report_header(doc.story if hasattr(doc, "story") else [], school.name if school else "KEY", "Consolidated Academic Report", f"{year.name} • Term {term.term_number}")
+        # Platypus stores flowables in a separate story; build it explicitly below.
+        story = []
+        report_header(story, school.name if school else "KEY", "Consolidated Academic Report", f"{year.name} • Term {term.term_number}")
         scope = classroom.name if classroom else "All Classes"
         stage = classroom.cambridge_stage.name if classroom and classroom.cambridge_stage else "—"
-        info = [["Scope", scope, "Academic Year", year.name, "Term", f"Term {term.term_number}"], ["Stage", stage, "Students", str(summary["students"]), "Generated By", "KEY"]]
-        info_table = Table(info, colWidths=[24*mm, 48*mm, 32*mm, 42*mm, 22*mm, 42*mm])
-        info_table.setStyle(TableStyle([("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTNAME",(2,0),(2,-1),"Helvetica-Bold"),("FONTNAME",(4,0),(4,-1),"Helvetica-Bold"),("BACKGROUND",(0,0),(0,-1),colors.HexColor("#f1f5f9")),("BACKGROUND",(2,0),(2,-1),colors.HexColor("#f1f5f9")),("BACKGROUND",(4,0),(4,-1),colors.HexColor("#f1f5f9")),("GRID",(0,0),(-1,-1),0.4,colors.HexColor("#cbd5e1")),("FONTSIZE",(0,0),(-1,-1),8.5),("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5)]))
-        story.extend([info_table, Spacer(1, 4*mm)])
-
-        def pct(value):
-            return f"{value:.1f}%" if value is not None else "—"
-        summary_table = Table([["Students", str(summary["students"]), "Assessment Avg", pct(summary["assessment_average"]), "Attendance Avg", pct(summary["attendance_average"]), "Competency Proficient+", pct(summary["competency_average"]), "Portfolio Items", str(summary["portfolio_items"]), "Artifacts", str(summary["artifacts"])]], colWidths=[21*mm,18*mm,29*mm,21*mm,29*mm,21*mm,38*mm,24*mm,27*mm,18*mm,21*mm,18*mm])
-        summary_table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#f8fafc")),("BOX",(0,0),(-1,-1),0.5,colors.HexColor("#cbd5e1")),("INNERGRID",(0,0),(-1,-1),0.3,colors.HexColor("#e2e8f0")),("FONTNAME",(0,0),(-1,-1),"Helvetica-Bold"),("ALIGN",(0,0),(-1,-1),"CENTER"),("FONTSIZE",(0,0),(-1,-1),7.5),("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5)]))
-        story.extend([summary_table, Paragraph("Learner Performance", heading)])
-
-        table = Table([["Admission", "Student", "Assessment Avg", "Attendance", "Competency P+", "Assessments", "Portfolio", "Artifacts"]] + rows, colWidths=[25*mm,65*mm,29*mm,27*mm,30*mm,25*mm,25*mm,25*mm], repeatRows=1)
-        table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#e2e8f0")),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("GRID",(0,0),(-1,-1),0.35,colors.HexColor("#cbd5e1")),("FONTSIZE",(0,0),(-1,-1),7.5),("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)]))
-        story.extend([table, Spacer(1, 5*mm), Paragraph("This consolidated report combines published assessment performance, attendance, competency outcomes, and portfolio evidence counts for the selected academic period.", small)])
-        doc.build(story)
+        story.extend([
+            info_table([["Scope", scope, "Academic Year", year.name, "Term", f"Term {term.term_number}"], ["Stage", stage, "Students", str(summary["students"]), "Generated By", "KEY"]], [24*mm,48*mm,32*mm,42*mm,22*mm,42*mm]),
+            Spacer(1, 4*mm),
+            summary_table([["Students", str(summary["students"]), "Assessment Avg", f"{summary['assessment_average']:.1f}%" if summary['assessment_average'] is not None else "—", "Attendance Avg", f"{summary['attendance_average']:.1f}%" if summary['attendance_average'] is not None else "—", "Competency Proficient+", f"{summary['competency_average']:.1f}%" if summary['competency_average'] is not None else "—", "Portfolio Items", str(summary['portfolio_items']), "Artifacts", str(summary['artifacts'])]], [21*mm,18*mm,29*mm,21*mm,29*mm,21*mm,38*mm,24*mm,27*mm,18*mm,21*mm,18*mm]),
+            Paragraph("Learner Performance", styles["heading"]),
+            data_table([["Admission", "Student", "Assessment Avg", "Attendance", "Competency P+", "Assessments", "Portfolio", "Artifacts"]] + rows, [25*mm,65*mm,29*mm,27*mm,30*mm,25*mm,25*mm,25*mm], center_from=2),
+            Spacer(1, 5*mm), Paragraph("This consolidated report combines published assessment performance, attendance, competency outcomes, and portfolio evidence counts for the selected academic period.", styles["small"]),
+        ])
+        doc.build(story, onFirstPage=footer, onLaterPages=footer)
         buffer.seek(0)
-        filename = f"consolidated-report-{year.name}-term-{term.term_number}.pdf"
-        return FileResponse(buffer, as_attachment=True, filename=filename, content_type="application/pdf")
+        return FileResponse(buffer, as_attachment=True, filename=f"consolidated-report-{year.name}-term-{term.term_number}.pdf", content_type="application/pdf")
