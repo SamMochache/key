@@ -37,34 +37,21 @@ async function downloadPdf(path: string, params: Record<string, string>) {
   window.URL.revokeObjectURL(url);
 }
 
-export async function downloadStudentReport(params: {
-  student: string;
-  academicYear?: string;
-  term?: string;
-}) {
+export async function downloadStudentReport(params: { student: string; academicYear?: string; term?: string }) {
   const query: Record<string, string> = { student: params.student };
   if (params.academicYear) query.academic_year = params.academicYear;
   if (params.term) query.term = params.term;
   return downloadPdf('/reports/student/', query);
 }
 
-export async function downloadClassReport(params: {
-  classroom: string;
-  academicYear?: string;
-  term?: string;
-}) {
+export async function downloadClassReport(params: { classroom: string; academicYear?: string; term?: string }) {
   const query: Record<string, string> = { classroom: params.classroom };
   if (params.academicYear) query.academic_year = params.academicYear;
   if (params.term) query.term = params.term;
   return downloadPdf('/reports/class/', query);
 }
 
-export async function downloadAttendanceReport(params: {
-  classroom?: string;
-  student?: string;
-  academicYear?: string;
-  term?: string;
-}) {
+export async function downloadAttendanceReport(params: { classroom?: string; student?: string; academicYear?: string; term?: string }) {
   const query: Record<string, string> = {};
   if (params.classroom) query.classroom = params.classroom;
   if (params.student) query.student = params.student;
@@ -73,12 +60,7 @@ export async function downloadAttendanceReport(params: {
   return downloadPdf('/reports/attendance/', query);
 }
 
-export async function downloadAssessmentResultsReport(params: {
-  classroom?: string;
-  student?: string;
-  academicYear?: string;
-  term?: string;
-}) {
+export async function downloadAssessmentResultsReport(params: { classroom?: string; student?: string; academicYear?: string; term?: string }) {
   const query: Record<string, string> = {};
   if (params.classroom) query.classroom = params.classroom;
   if (params.student) query.student = params.student;
@@ -87,16 +69,20 @@ export async function downloadAssessmentResultsReport(params: {
   return downloadPdf('/reports/assessments/', query);
 }
 
-export async function downloadCompetencyOutcomesReport(params: {
-  classroom?: string;
-  student?: string;
-  academicYear?: string;
-  term?: string;
-}) {
+export async function downloadCompetencyOutcomesReport(params: { classroom?: string; student?: string; academicYear?: string; term?: string }) {
   const query: Record<string, string> = {};
   if (params.classroom) query.classroom = params.classroom;
   if (params.student) query.student = params.student;
   if (params.academicYear) query.academic_year = params.academicYear;
   if (params.term) query.term = params.term;
   return downloadPdf('/reports/competencies/', query);
+}
+
+export async function downloadPortfolioEvidenceReport(params: { classroom?: string; student?: string; academicYear?: string; term?: string }) {
+  const query: Record<string, string> = {};
+  if (params.classroom) query.classroom = params.classroom;
+  if (params.student) query.student = params.student;
+  if (params.academicYear) query.academic_year = params.academicYear;
+  if (params.term) query.term = params.term;
+  return downloadPdf('/reports/portfolio/', query);
 }
