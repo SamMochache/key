@@ -1,4 +1,5 @@
 from .academic_year import AcademicYear
+from .calendar_event import CalendarEvent
 from .cambridge_stage import CambridgeStage
 from .curriculum import Curriculum
 from .montessori_level import MontessoriLevel
@@ -11,6 +12,7 @@ from .classroom_teacher import ClassroomTeacherAssignment
 
 __all__ = [
     "AcademicYear",
+    "CalendarEvent",
     "CambridgeStage",
     "Curriculum",
     "MontessoriLevel",
