@@ -2,9 +2,9 @@ import type { Role } from '../../lib/types';
 
 export interface NavItem { label: string; to: string; icon: string; roles: Role[]; }
 export interface NavGroup { title: string; items: NavItem[]; }
-const ALL: Role[] = ['admin', 'teacher', 'student', 'parent'];
+const ALL: Role[] = ['admin', 'teacher', 'student'];
 export const navGroups: NavGroup[] = [
-  { title: 'Overview', items: [{ label: 'Dashboard', to: '/', icon: 'LayoutDashboard', roles: ALL }] },
+  { title: 'Overview', items: [{ label: 'Dashboard', to: '/', icon: 'LayoutDashboard', roles: [...ALL, 'parent'] }] },
   { title: 'People', items: [
     { label: 'Students', to: '/students', icon: 'Users', roles: ['admin', 'teacher'] },
     { label: 'Teachers', to: '/teachers', icon: 'UsersRound', roles: ['admin', 'teacher'] },
