@@ -10,6 +10,7 @@ from .api_views import (
     RubricCriterionViewSet,
     RubricViewSet,
 )
+from .competency_api_views import CompetencyViewSet
 from .evidence_api_views import EvidenceViewSet
 
 router = DefaultRouter()
@@ -21,6 +22,7 @@ router.register("evaluations", AssessmentEvaluationViewSet, basename="assessment
 router.register("criterion-scores", CriterionScoreViewSet, basename="criterion-score")
 router.register("competency-evaluations", CompetencyEvaluationViewSet, basename="competency-evaluation")
 router.register("dashboard-summary", DashboardSummaryView, basename="dashboard-summary")
+router.register("competencies", CompetencyViewSet, basename="competency")
 router.register("evidence", EvidenceViewSet, basename="evidence")
 
 urlpatterns = router.urls
