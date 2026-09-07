@@ -16,7 +16,10 @@ export function Sidebar({
 
 
 }: {open: boolean;onClose: () => void;}) {
-  const { role } = useApp();
+  const { role, school } = useApp();
+  const schoolName = school?.name || (role === 'admin' ? 'Key International' : 'Your Institution');
+  const schoolShortName = school?.short_name || (role === 'admin' ? 'MONTESSORI SCHOOL' : 'INSTITUTION');
+
   return (
     <>
       {open &&
@@ -38,12 +41,12 @@ export function Sidebar({
             alt=""
             className="h-9 w-9 rounded-xl object-contain bg-brand-50 dark:bg-slate-800 p-0.5" />
           
-          <div className="leading-tight">
-            <p className="font-display font-extrabold text-slate-800 dark:text-white text-[15px]">
-              Key International
+          <div className="leading-tight min-w-0">
+            <p className="font-display font-extrabold text-slate-800 dark:text-white text-[15px] truncate">
+              {schoolName}
             </p>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">
-              MONTESSORI SCHOOL
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium tracking-wide truncate">
+              {schoolShortName}
             </p>
           </div>
         </div>
