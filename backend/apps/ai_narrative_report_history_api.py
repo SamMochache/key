@@ -2,7 +2,7 @@ from django.http import JsonResponse
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
 
-from apps.assessments.models import AINarrativeReportHistory
+from apps.assessments.models import AINarrativeReport, AINarrativeReportHistory
 from apps.assessments.permissions import UserRole, get_user_role, get_user_school
 from apps.enrollment.models import Enrollment
 
@@ -23,14 +23,19 @@ class AINarrativeReportHistoryView(views.APIView):
         if not report_id:
             return JsonResponse({"detail": "Report id is required."}, status=400)
 
-        history = AINarrativeReportHistory.objects.select_related("actor", "report").filter(report_id=report_id)
-        if school is not None:
-            history = history.filter(
-                report__student__enrollments__classroom__school_id=school.id,
-                report__student__enrollments__academic_year_id=request.query_params.get("academic_year", history.first().report.academic_year_id if history.exists() else None),
-                report__student__enrollments__term_id=request.query_params.get("term", history.first().report.term_id if history.exists() else None),
-            ).distinct()
+        report = AINarrativeReport.objects.filter(id=report_id).first()
+        if report is None:
+            return JsonResponse({"detail": "Report not found."}, status=404)
 
+        if school is not None and not Enrollment.objects.filter(
+            student_id=report.student_id,
+            academic_year_id=report.academic_year_id,
+            term_id=report.term_id,
+            classroom__school_id=school.id,
+        ).exists():
+            raise PermissionDenied("The report does not belong to your institution.")
+
+        history = AINarrativeReportHistory.objects.select_related("actor").filter(report_id=report.id)
         results = []
         for item in history[:100]:
             results.append({
