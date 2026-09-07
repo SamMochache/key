@@ -8,6 +8,7 @@ export const navGroups: NavGroup[] = [
   { title: 'People', items: [
     { label: 'Students', to: '/students', icon: 'Users', roles: ['admin', 'teacher'] },
     { label: 'Teachers', to: '/teachers', icon: 'UsersRound', roles: ['admin', 'teacher'] },
+    { label: 'Parents & Guardians', to: '/parents', icon: 'UserRoundCheck', roles: ['admin', 'teacher'] },
     { label: 'Classes', to: '/classes', icon: 'School', roles: ['admin', 'teacher'] },
     { label: 'Attendance', to: '/attendance', icon: 'CalendarCheck', roles: ['admin', 'teacher'] }
   ] },
