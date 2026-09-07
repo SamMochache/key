@@ -2,7 +2,8 @@ from rest_framework import permissions, viewsets
 
 from .models.department import Department
 from .models.teacher import Teacher
-from .serializers import DepartmentSerializer, TeacherSerializer
+from .models.teacher_subject import TeacherSubject
+from .serializers import DepartmentSerializer, TeacherSerializer, TeacherSubjectSerializer
 
 
 class InstitutionAdminPermission(permissions.BasePermission):
@@ -74,4 +75,43 @@ class DepartmentViewSet(viewsets.ModelViewSet):
         school = self.request.query_params.get("school")
         if school:
             queryset = queryset.filter(school_id=school)
+        return queryset
+
+
+class TeacherSubjectAccessPermission(permissions.BasePermission):
+    message = "You do not have permission to access teacher subject assignments."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        profile = getattr(user, "teacher_profile", None) or getattr(user, "student_profile", None)
+        return bool(user.is_staff or user.is_superuser or profile is not None)
+
+
+class TeacherSubjectViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = TeacherSubjectSerializer
+    permission_classes = [TeacherSubjectAccessPermission]
+
+    def get_queryset(self):
+        queryset = TeacherSubject.objects.select_related(
+            "teacher__user", "teacher__school", "subject", "classroom", "academic_year", "term"
+        )
+        user = self.request.user
+        if not (user.is_staff or user.is_superuser):
+            profile = getattr(user, "teacher_profile", None) or getattr(user, "student_profile", None)
+            queryset = queryset.filter(classroom__school_id=profile.school_id) if profile else queryset.none()
+        for param, field in (
+            ("school", "teacher__school_id"),
+            ("classroom", "classroom_id"),
+            ("academic_year", "academic_year_id"),
+            ("term", "term_id"),
+            ("teacher", "teacher_id"),
+            ("subject", "subject_id"),
+        ):
+            value = self.request.query_params.get(param)
+            if value:
+                queryset = queryset.filter(**{field: value})
+        if self.request.query_params.get("active") in {"1", "true", "True"}:
+            queryset = queryset.filter(is_active=True)
         return queryset
