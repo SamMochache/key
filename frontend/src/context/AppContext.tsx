@@ -6,13 +6,23 @@ import React, {
   useContext
 } from 'react';
 import type { Role } from '../lib/types';
-import { clearTokens, getAccessToken, getCurrentUser, type CurrentUser } from '../lib/api';
+import {
+  clearTokens,
+  getAccessToken,
+  getCurrentUser,
+  getMySchool,
+  type CurrentUser,
+  type School
+} from '../lib/api';
 
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
+export type SchoolStatus = 'idle' | 'loading' | 'loaded' | 'unavailable' | 'error';
 
 interface AppState {
   role: Role;
   user: CurrentUser | null;
+  school: School | null;
+  schoolStatus: SchoolStatus;
   authStatus: AuthStatus;
   refreshSession: () => Promise<void>;
   logout: () => void;
@@ -26,6 +36,8 @@ const supportedRoles: Role[] = ['admin', 'teacher', 'student'];
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<Role>('student');
   const [user, setUser] = useState<CurrentUser | null>(null);
+  const [school, setSchool] = useState<School | null>(null);
+  const [schoolStatus, setSchoolStatus] = useState<SchoolStatus>('idle');
   const [authStatus, setAuthStatus] = useState<AuthStatus>('loading');
   const [dark, setDark] = useState(false);
 
@@ -39,6 +51,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const token = getAccessToken();
     if (!token) {
       setUser(null);
+      setSchool(null);
+      setSchoolStatus('idle');
       setAuthStatus('unauthenticated');
       return;
     }
@@ -49,12 +63,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!supportedRoles.includes(currentUser.role as Role)) {
         throw new Error('This account does not have a supported application role.');
       }
+
       setUser(currentUser);
       setRole(currentUser.role as Role);
+
+      if (currentUser.role === 'admin') {
+        // Administrators are institution-global, so they do not get a single
+        // institution context automatically.
+        setSchool(null);
+        setSchoolStatus('unavailable');
+      } else {
+        setSchoolStatus('loading');
+        try {
+          const currentSchool = await getMySchool();
+          setSchool(currentSchool);
+          setSchoolStatus('loaded');
+        } catch {
+          // Keep authentication separate from institution loading. A valid
+          // user session should not be discarded just because school data is
+          // temporarily unavailable.
+          setSchool(null);
+          setSchoolStatus('error');
+        }
+      }
+
       setAuthStatus('authenticated');
     } catch (error) {
       clearTokens();
       setUser(null);
+      setSchool(null);
+      setSchoolStatus('idle');
       setAuthStatus('unauthenticated');
       throw error;
     }
@@ -67,13 +105,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     clearTokens();
     setUser(null);
+    setSchool(null);
+    setSchoolStatus('idle');
     setAuthStatus('unauthenticated');
   }, []);
 
   const toggleDark = useCallback(() => setDark((d) => !d), []);
 
   return (
-    <AppContext.Provider value={{ role, user, authStatus, refreshSession, logout, dark, toggleDark }}>
+    <AppContext.Provider
+      value={{
+        role,
+        user,
+        school,
+        schoolStatus,
+        authStatus,
+        refreshSession,
+        logout,
+        dark,
+        toggleDark
+      }}>
       {children}
     </AppContext.Provider>
   );
