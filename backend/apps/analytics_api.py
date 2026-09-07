@@ -63,7 +63,10 @@ class AnalyticsView(views.APIView):
         graded = submissions.filter(status="GRADED").count()
         completion_rate = (graded / submission_total * 100) if submission_total else None
 
-        competency_values = [float(value) for value in competencies.values_list("score", flat=True) if value is not None]
+        # CompetencyEvaluation stores the achieved competency level, not a numeric
+        # field named `score`. The model exposes `level` (1-5), so analytics must
+        # aggregate that field directly.
+        competency_values = [float(value) for value in competencies.values_list("level", flat=True) if value is not None]
         outcomes_secure = (
             round(sum(1 for value in competency_values if value >= 3) / len(competency_values) * 100, 1)
             if competency_values else None
@@ -73,7 +76,10 @@ class AnalyticsView(views.APIView):
         today = timezone.localdate()
         for offset in range(5, -1, -1):
             month_start = (today.replace(day=1) - timedelta(days=offset * 28)).replace(day=1)
-            next_month = month_start.replace(year=month_start.year + (month_start.month == 12), month=1 if month_start.month == 12 else month_start.month + 1)
+            next_month = month_start.replace(
+                year=month_start.year + (month_start.month == 12),
+                month=1 if month_start.month == 12 else month_start.month + 1,
+            )
             records = attendance.filter(
                 attendance_register__lesson_session__lesson_date__gte=month_start,
                 attendance_register__lesson_session__lesson_date__lt=next_month,
@@ -107,7 +113,7 @@ class AnalyticsView(views.APIView):
             })
 
         competency_rows = []
-        for row in competencies.values("competency__name", "competency__sequence").annotate(value=Avg("score")).order_by("competency__sequence")[:8]:
+        for row in competencies.values("competency__name", "competency__sequence").annotate(value=Avg("level")).order_by("competency__sequence")[:8]:
             competency_rows.append({"skill": row["competency__name"], "value": round(float(row["value"] or 0) / 5 * 100, 1)})
 
         return Response({
