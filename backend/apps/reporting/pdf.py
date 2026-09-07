@@ -6,7 +6,7 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import PageBreak, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 # Shared KEY report palette. Keep this separate from the application UI so PDFs remain
 # consistent even when the frontend theme changes.
@@ -21,36 +21,13 @@ LABEL = colors.HexColor("#f1f5f9")
 def report_styles():
     styles = getSampleStyleSheet()
     return {
-        "title": ParagraphStyle(
-            "KeyReportTitle", parent=styles["Title"], fontName="Helvetica-Bold",
-            fontSize=17, leading=21, textColor=INK, alignment=TA_LEFT,
-            spaceAfter=1.5 * mm,
-        ),
-        "subtitle": ParagraphStyle(
-            "KeyReportSubtitle", parent=styles["BodyText"], fontName="Helvetica",
-            fontSize=9.5, leading=12, textColor=MUTED, spaceAfter=4 * mm,
-        ),
-        "heading": ParagraphStyle(
-            "KeyReportHeading", parent=styles["Heading2"], fontName="Helvetica-Bold",
-            fontSize=11, leading=14, textColor=INK, spaceBefore=4 * mm,
-            spaceAfter=2 * mm,
-        ),
-        "body": ParagraphStyle(
-            "KeyReportBody", parent=styles["BodyText"], fontName="Helvetica",
-            fontSize=8.5, leading=11, textColor=INK,
-        ),
-        "small": ParagraphStyle(
-            "KeyReportSmall", parent=styles["BodyText"], fontName="Helvetica",
-            fontSize=7.5, leading=9.5, textColor=MUTED,
-        ),
-        "table": ParagraphStyle(
-            "KeyReportTable", parent=styles["BodyText"], fontName="Helvetica",
-            fontSize=7.8, leading=9.5, textColor=INK,
-        ),
-        "table_header": ParagraphStyle(
-            "KeyReportTableHeader", parent=styles["BodyText"], fontName="Helvetica-Bold",
-            fontSize=7.8, leading=9.5, textColor=INK,
-        ),
+        "title": ParagraphStyle("KeyReportTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=17, leading=21, textColor=INK, alignment=TA_LEFT, spaceAfter=1.5 * mm),
+        "subtitle": ParagraphStyle("KeyReportSubtitle", parent=styles["BodyText"], fontName="Helvetica", fontSize=9.5, leading=12, textColor=MUTED, spaceAfter=4 * mm),
+        "heading": ParagraphStyle("KeyReportHeading", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=11, leading=14, textColor=INK, spaceBefore=4 * mm, spaceAfter=2 * mm),
+        "body": ParagraphStyle("KeyReportBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=8.5, leading=11, textColor=INK),
+        "small": ParagraphStyle("KeyReportSmall", parent=styles["BodyText"], fontName="Helvetica", fontSize=7.5, leading=9.5, textColor=MUTED),
+        "table": ParagraphStyle("KeyReportTable", parent=styles["BodyText"], fontName="Helvetica", fontSize=7.8, leading=9.5, textColor=INK),
+        "table_header": ParagraphStyle("KeyReportTableHeader", parent=styles["BodyText"], fontName="Helvetica-Bold", fontSize=7.8, leading=9.5, textColor=INK),
     }
 
 
@@ -108,10 +85,7 @@ def data_table(rows, col_widths, repeat_rows=1, font_size=7.8, center_from=None)
 
 def report_header(story, school_name, title, subtitle=None):
     styles = report_styles()
-    header = Table(
-        [[Paragraph("KEY", styles["title"]), Paragraph(school_name or "Institution", styles["body"])]],
-        colWidths=[30 * mm, 230 * mm],
-    )
+    header = Table([[Paragraph("KEY", styles["title"]), Paragraph(school_name or "Institution", styles["body"])]], colWidths=[30 * mm, 230 * mm])
     header.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LINEBELOW", (0, 0), (-1, -1), 1.1, INK),
@@ -126,9 +100,7 @@ def report_header(story, school_name, title, subtitle=None):
 
 def footer(canvas, doc):
     canvas.saveState()
-    width, _ = A4
-    if doc.pagesize[0] > doc.pagesize[1]:
-        width = doc.pagesize[0]
+    width = doc.pagesize[0]
     canvas.setStrokeColor(BORDER)
     canvas.setLineWidth(0.4)
     canvas.line(doc.leftMargin, 9 * mm, width - doc.rightMargin, 9 * mm)
@@ -143,10 +115,9 @@ def footer(canvas, doc):
 def build_document(buffer, *, landscape_mode=False, title="KEY Report"):
     from reportlab.lib.pagesizes import landscape
 
-    page_size = landscape(A4) if landscape_mode else A4
-    return __import__("reportlab.platypus", fromlist=["SimpleDocTemplate"]).SimpleDocTemplate(
+    return SimpleDocTemplate(
         buffer,
-        pagesize=page_size,
+        pagesize=landscape(A4) if landscape_mode else A4,
         rightMargin=14 * mm,
         leftMargin=14 * mm,
         topMargin=14 * mm,
