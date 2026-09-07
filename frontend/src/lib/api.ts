@@ -71,6 +71,26 @@ export interface School {
   updated_at: string;
 }
 
+export interface ApiStudent {
+  id: string;
+  user: string;
+  full_name: string;
+  email: string;
+  initials: string;
+  school: string;
+  school_name: string;
+  admission_number: string;
+  admission_date: string;
+  date_of_birth: string;
+  age: number;
+  gender: string;
+  nationality: string;
+  birth_certificate_number: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface Paginated<T> {
   count: number;
   next: string | null;
@@ -114,13 +134,11 @@ export function clearTokens() {
 async function refreshAccessToken(): Promise<string | null> {
   const refresh = getRefreshToken();
   if (!refresh) return null;
-
   const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ refresh })
   });
-
   if (!response.ok) return null;
   const data = (await response.json()) as { access?: string; refresh?: string };
   if (!data.access) return null;
@@ -134,12 +152,10 @@ export async function login(email: string, password: string) {
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ email, password })
   });
-
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     throw new Error(detail || 'Invalid email or password.');
   }
-
   const data = (await response.json()) as { access: string; refresh: string };
   setTokens(data.access, data.refresh);
   return data;
@@ -149,25 +165,18 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   const token = getAccessToken();
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
-
-  if (init.body && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
+  if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
-
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
-
   if (response.status === 401 && retry && getRefreshToken()) {
     const refreshed = await refreshAccessToken();
     if (refreshed) return request<T>(path, init, false);
     clearTokens();
   }
-
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     throw new Error(detail || `API request failed (${response.status})`);
   }
-
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
@@ -183,6 +192,20 @@ export async function getMySchool() {
 export async function listSchools() {
   const data = await request<Paginated<School> | School[]>('/schools/');
   return Array.isArray(data) ? data : data.results;
+}
+
+export async function listStudents(params: { search?: string; gender?: string; isActive?: boolean } = {}) {
+  const query = new URLSearchParams();
+  if (params.search?.trim()) query.set('search', params.search.trim());
+  if (params.gender) query.set('gender', params.gender);
+  if (params.isActive !== undefined) query.set('is_active', String(params.isActive));
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  const data = await request<Paginated<ApiStudent> | ApiStudent[]>(`/students/${suffix}`);
+  return Array.isArray(data) ? data : data.results;
+}
+
+export async function getStudent(id: string) {
+  return request<ApiStudent>(`/students/${id}/`);
 }
 
 export async function listAssessments() {
