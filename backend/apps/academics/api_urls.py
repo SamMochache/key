@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .admin_actions import SetCurrentAcademicYearView, SetCurrentTermView
+from .calendar_api import CalendarEventViewSet
 from .programme_views import ProgrammeViewSet
 from .views import (
     AcademicYearViewSet,
@@ -24,6 +25,7 @@ router.register("cambridge-stages", CambridgeStageViewSet, basename="cambridge-s
 router.register("montessori-levels", MontessoriLevelViewSet, basename="montessori-level")
 router.register("stage-subjects", StageSubjectViewSet, basename="stage-subject")
 router.register("classrooms", ClassroomViewSet, basename="classroom")
+router.register("calendar-events", CalendarEventViewSet, basename="calendar-event")
 
 urlpatterns = [
     path("academic-years/<uuid:pk>/set-current/", SetCurrentAcademicYearView.as_view(), name="academic-year-set-current"),
