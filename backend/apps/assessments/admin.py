@@ -22,7 +22,6 @@ class EvidenceAdmin(admin.ModelAdmin):
         "submission__enrollment__student__user__last_name",
         "submission__assessment__title",
     )
-    autocomplete_fields = ("submission", "competency", "created_by")
 
     @admin.display(description="Student")
     def student_name(self, obj):
