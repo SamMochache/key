@@ -8,6 +8,7 @@ from apps.assessment_report_api import AssessmentResultsReportView
 from apps.attendance_report_api import AttendanceReportView
 from apps.class_report_api import ClassReportView
 from apps.competency_report_api import CompetencyOutcomesReportView
+from apps.consolidated_report_api import ConsolidatedReportView
 from apps.portfolio_report_api import PortfolioEvidenceReportView
 from apps.report_api import StudentReportView
 
@@ -31,6 +32,7 @@ urlpatterns = [
     path("api/reports/assessments/", AssessmentResultsReportView.as_view(), name="assessment-results-report"),
     path("api/reports/competencies/", CompetencyOutcomesReportView.as_view(), name="competency-outcomes-report"),
     path("api/reports/portfolio/", PortfolioEvidenceReportView.as_view(), name="portfolio-evidence-report"),
+    path("api/reports/consolidated/", ConsolidatedReportView.as_view(), name="consolidated-report"),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
 ]
