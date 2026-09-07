@@ -13,6 +13,7 @@ export const navGroups: NavGroup[] = [
   ] },
   { title: 'Learning', items: [
     { label: 'Academics', to: '/academics', icon: 'BookOpen', roles: ['admin', 'teacher', 'student'] },
+    { label: 'Lessons', to: '/lessons', icon: 'BookOpenCheck', roles: ['admin', 'teacher'] },
     { label: 'Assessments', to: '/assessments', icon: 'ClipboardCheck', roles: ['admin', 'teacher'] },
     { label: 'AI Reports', to: '/ai-reports', icon: 'Sparkles', roles: ['admin', 'teacher'] },
     { label: 'Portfolio', to: '/portfolio', icon: 'FolderHeart', roles: ALL }
