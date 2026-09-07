@@ -16,6 +16,7 @@ import { Lessons } from './pages/Lessons';
 import { Assessments } from './pages/Assessments';
 import { Evidence } from './pages/Evidence';
 import { AIReports } from './pages/AIReports';
+import { StudentAIReports } from './pages/StudentAIReports';
 import { Portfolio } from './pages/Portfolio';
 import { Calendar } from './pages/Calendar';
 import { Communication } from './pages/Communication';
@@ -26,6 +27,7 @@ const STAFF = ['admin', 'teacher'] as const;
 const PEOPLE = ['admin', 'teacher'] as const;
 const LEARNING = ['admin', 'teacher', 'student'] as const;
 const ALL = ['admin', 'teacher', 'student'] as const;
+const STUDENT = ['student'] as const;
 
 export function App() {
   return (
@@ -60,6 +62,9 @@ export function App() {
                 <Route path="/portfolio" element={<Portfolio />} />
                 <Route path="/calendar" element={<Calendar />} />
                 <Route path="/communication" element={<Communication />} />
+              </Route>
+              <Route element={<ProtectedRoute roles={[...STUDENT]} />}>
+                <Route path="/my-ai-reports" element={<StudentAIReports />} />
               </Route>
               <Route path="*" element={<Dashboard />} />
             </Route>
