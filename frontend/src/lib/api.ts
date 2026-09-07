@@ -79,6 +79,10 @@ export function getAccessToken(): string | null {
   return localStorage.getItem(ACCESS_TOKEN_KEY);
 }
 
+function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
 export function setTokens(access: string, refresh?: string) {
   localStorage.setItem(ACCESS_TOKEN_KEY, access);
   if (refresh) localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
@@ -89,7 +93,41 @@ export function clearTokens() {
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function refreshAccessToken(): Promise<string | null> {
+  const refresh = getRefreshToken();
+  if (!refresh) return null;
+
+  const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ refresh })
+  });
+
+  if (!response.ok) return null;
+  const data = (await response.json()) as { access?: string; refresh?: string };
+  if (!data.access) return null;
+  setTokens(data.access, data.refresh);
+  return data.access;
+}
+
+export async function login(email: string, password: string) {
+  const response = await fetch(`${API_BASE_URL}/auth/token/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(detail || 'Invalid email or password.');
+  }
+
+  const data = (await response.json()) as { access: string; refresh: string };
+  setTokens(data.access, data.refresh);
+  return data;
+}
+
+async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
   const token = getAccessToken();
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
@@ -100,6 +138,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+
+  if (response.status === 401 && retry && getRefreshToken()) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) return request<T>(path, init, false);
+    clearTokens();
+  }
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
