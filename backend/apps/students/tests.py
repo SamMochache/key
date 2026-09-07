@@ -15,7 +15,6 @@ class StudentApiTests(APITestCase):
     def setUp(self):
         self.school_a = School.objects.create(name="Key International School", short_name="KEY", city="Nairobi")
         self.school_b = School.objects.create(name="Partner School", short_name="PARTNER", city="Nairobi")
-
         self.admin = User.objects.create_superuser(email="admin@example.com", password="StrongPassword123!")
         self.teacher_user = User.objects.create_user(
             email="teacher@example.com", password="StrongPassword123!", first_name="Test", last_name="Teacher"
@@ -31,25 +30,17 @@ class StudentApiTests(APITestCase):
             user=self.teacher_user,
             school=self.school_a,
             employee_number="T-001",
-            employment_type="full_time",
+            employment_type="FULL_TIME",
             employment_date=date(2025, 1, 1),
             department=department,
         )
         self.student = Student.objects.create(
-            user=self.student_user,
-            school=self.school_a,
-            admission_number="KEY-001",
-            admission_date=date(2026, 1, 1),
-            date_of_birth=date(2015, 1, 1),
-            gender="male",
+            user=self.student_user, school=self.school_a, admission_number="KEY-001",
+            admission_date=date(2026, 1, 1), date_of_birth=date(2015, 1, 1), gender="male",
         )
         self.other_student = Student.objects.create(
-            user=self.other_student_user,
-            school=self.school_b,
-            admission_number="PARTNER-001",
-            admission_date=date(2026, 1, 1),
-            date_of_birth=date(2015, 2, 1),
-            gender="female",
+            user=self.other_student_user, school=self.school_b, admission_number="PARTNER-001",
+            admission_date=date(2026, 1, 1), date_of_birth=date(2015, 2, 1), gender="female",
         )
         self.list_url = reverse("student-list")
 
@@ -98,12 +89,9 @@ class StudentApiTests(APITestCase):
         response = self.client.post(
             self.list_url,
             {
-                "user": str(self.other_student_user.id),
-                "school": str(self.school_a.id),
-                "admission_number": "KEY-001",
-                "admission_date": "2026-02-01",
-                "date_of_birth": "2015-03-01",
-                "gender": "male",
+                "user": str(self.other_student_user.id), "school": str(self.school_a.id),
+                "admission_number": "KEY-001", "admission_date": "2026-02-01",
+                "date_of_birth": "2015-03-01", "gender": "male",
             },
             format="json",
         )
