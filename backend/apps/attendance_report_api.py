@@ -3,17 +3,14 @@ from io import BytesIO
 from django.http import FileResponse, JsonResponse
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Paragraph, Spacer
 
 from apps.academics.models import Classroom
 from apps.assessments.permissions import UserRole, get_user_role, get_user_school
 from apps.attendance.models import AttendanceRecord
 from apps.enrollment.models import Enrollment
+from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles, summary_table
 
 
 class AttendanceReportView(views.APIView):
@@ -57,7 +54,7 @@ class AttendanceReportView(views.APIView):
         selected_classroom = enrollments.first().classroom
         if classroom_id:
             classroom = Classroom.objects.filter(id=classroom_id, is_active=True).select_related(
-                "academic_year", "term", "cambridge_stage"
+                "academic_year", "term", "cambridge_stage", "school"
             ).first()
             if classroom is None:
                 return JsonResponse({"detail": "Classroom not found."}, status=404)
@@ -78,7 +75,7 @@ class AttendanceReportView(views.APIView):
             records = AttendanceRecord.objects.filter(enrollment=enrollment)
             counts = {
                 status: records.filter(status=status).count()
-                for status in ("PRESENT", "ABSENT", "LATE", "EXCUSED")
+                for status in ("PRESENT", "LATE", "ABSENT", "EXCUSED")
             }
             total = sum(counts.values())
             credited = counts["PRESENT"] + counts["LATE"]
@@ -98,92 +95,40 @@ class AttendanceReportView(views.APIView):
             ])
 
         overall_rate = round(total_credited / total_records * 100, 1) if total_records else None
-
         buffer = BytesIO()
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=landscape(A4),
-            rightMargin=14 * mm,
-            leftMargin=14 * mm,
-            topMargin=14 * mm,
-            bottomMargin=14 * mm,
-            title=f"Attendance Summary - {selected_classroom.name}",
-            author="KEY",
+        doc = build_document(buffer, landscape_mode=True, title="Attendance Summary Report")
+        styles = report_styles()
+        school_name = selected_classroom.school.name if getattr(selected_classroom, "school", None) else (school.name if school else "KEY")
+        report_header(
+            story := [],
+            school_name,
+            "Attendance Summary Report",
+            f"{selected_classroom.name} • {selected_classroom.academic_year.name} • Term {selected_classroom.term.term_number}",
         )
-        styles = getSampleStyleSheet()
-        title = ParagraphStyle(
-            "AttendanceReportTitle", parent=styles["Title"], alignment=TA_CENTER,
-            fontSize=18, leading=22, spaceAfter=4 * mm,
-        )
-        heading = ParagraphStyle(
-            "AttendanceReportHeading", parent=styles["Heading2"], fontSize=11,
-            leading=14, spaceBefore=4 * mm, spaceAfter=2 * mm,
-        )
-        small = ParagraphStyle("AttendanceReportSmall", parent=styles["BodyText"], fontSize=8, leading=10)
-
-        story = [
-            Paragraph("KEY", title),
-            Paragraph("Attendance Summary Report", styles["Heading1"]),
-            Spacer(1, 2 * mm),
-        ]
-
-        info = [
-            ["Class", selected_classroom.name, "Code", selected_classroom.code, "Students", str(len(rows))],
-            ["Academic Year", selected_classroom.academic_year.name, "Term", f"Term {selected_classroom.term.term_number}", "Attendance Records", str(total_records)],
-        ]
-        info_table = Table(info, colWidths=[25 * mm, 55 * mm, 22 * mm, 45 * mm, 30 * mm, 55 * mm])
-        info_table.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-            ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-            ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
-            ("FONTNAME", (4, 0), (4, -1), "Helvetica-Bold"),
-            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f1f5f9")),
-            ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#f1f5f9")),
-            ("BACKGROUND", (4, 0), (4, -1), colors.HexColor("#f1f5f9")),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
-            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ]))
-        story.extend([info_table, Spacer(1, 4 * mm)])
-
-        summary = [[
-            "Overall Rate", f"{overall_rate:.1f}%" if overall_rate is not None else "—",
-            "Present", str(totals["PRESENT"]),
-            "Late", str(totals["LATE"]),
-            "Absent", str(totals["ABSENT"]),
-            "Excused", str(totals["EXCUSED"]),
-        ]]
-        summary_table = Table(summary, colWidths=[28 * mm, 30 * mm, 25 * mm, 25 * mm, 22 * mm, 25 * mm, 30 * mm])
-        summary_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-            ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#e2e8f0")),
-            ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]))
-        story.extend([summary_table, Paragraph("Student Attendance", heading)])
-
-        table_data = [["Admission", "Student", "Present", "Late", "Absent", "Excused", "Attendance Rate"]] + rows
-        student_table = Table(table_data, colWidths=[30 * mm, 80 * mm, 27 * mm, 25 * mm, 27 * mm, 28 * mm, 40 * mm], repeatRows=1)
-        student_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("ALIGN", (2, 1), (-1, -1), "CENTER"),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ]))
         story.extend([
-            student_table,
+            info_table([
+                ["Class", selected_classroom.name, "Code", selected_classroom.code, "Students", str(len(rows))],
+                ["Academic Year", selected_classroom.academic_year.name, "Term", f"Term {selected_classroom.term.term_number}", "Attendance Records", str(total_records)],
+            ], [25 * mm, 55 * mm, 22 * mm, 45 * mm, 30 * mm, 55 * mm]),
+            Spacer(1, 4 * mm),
+            summary_table([
+                "Overall Rate", f"{overall_rate:.1f}%" if overall_rate is not None else "—",
+                "Present", str(totals["PRESENT"]), "Late", str(totals["LATE"]),
+                "Absent", str(totals["ABSENT"]), "Excused", str(totals["EXCUSED"]),
+            ], [28 * mm, 30 * mm, 25 * mm, 25 * mm, 22 * mm, 25 * mm, 30 * mm]),
+            Paragraph("Student Attendance", styles["heading"]),
+            data_table(
+                [["Admission", "Student", "Present", "Late", "Absent", "Excused", "Attendance Rate"]] + rows,
+                [30 * mm, 80 * mm, 27 * mm, 25 * mm, 27 * mm, 28 * mm, 40 * mm],
+                center_from=2,
+            ),
             Spacer(1, 6 * mm),
-            Paragraph("Attendance rate counts Present and Late records as attended. Excused records are reported separately and are not counted as attended.", small),
+            Paragraph(
+                "Attendance rate counts Present and Late records as attended. Excused records are reported separately and are not counted as attended.",
+                styles["small"],
+            ),
         ])
-        doc.build(story)
+        doc.build(story, onFirstPage=footer, onLaterPages=footer)
         buffer.seek(0)
         filename = f"attendance-report-{selected_classroom.code}-{selected_classroom.academic_year.name}-term-{selected_classroom.term.term_number}.pdf"
         return FileResponse(buffer, as_attachment=True, filename=filename, content_type="application/pdf")
