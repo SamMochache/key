@@ -25,6 +25,9 @@ class CurrentUserView(APIView):
         elif hasattr(user, "teacher_profile"):
             data["role"] = "teacher"
             data["school_id"] = str(user.teacher_profile.school_id)
+        elif hasattr(user, "parent_profile"):
+            data["role"] = "parent"
+            data["school_id"] = str(user.parent_profile.school_id)
         elif hasattr(user, "student_profile"):
             data["role"] = "student"
             data["school_id"] = str(user.student_profile.school_id)
