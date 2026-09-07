@@ -31,7 +31,7 @@ interface AppState {
 }
 
 const AppContext = createContext<AppState | null>(null);
-const supportedRoles: Role[] = ['admin', 'teacher', 'student'];
+const supportedRoles: Role[] = ['admin', 'teacher', 'parent', 'student'];
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<Role>('student');
@@ -68,8 +68,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setRole(currentUser.role as Role);
 
       if (currentUser.role === 'admin') {
-        // Administrators are institution-global, so they do not get a single
-        // institution context automatically.
         setSchool(null);
         setSchoolStatus('unavailable');
       } else {
@@ -79,9 +77,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setSchool(currentSchool);
           setSchoolStatus('loaded');
         } catch {
-          // Keep authentication separate from institution loading. A valid
-          // user session should not be discarded just because school data is
-          // temporarily unavailable.
           setSchool(null);
           setSchoolStatus('error');
         }
@@ -113,18 +108,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const toggleDark = useCallback(() => setDark((d) => !d), []);
 
   return (
-    <AppContext.Provider
-      value={{
-        role,
-        user,
-        school,
-        schoolStatus,
-        authStatus,
-        refreshSession,
-        logout,
-        dark,
-        toggleDark
-      }}>
+    <AppContext.Provider value={{ role, user, school, schoolStatus, authStatus, refreshSession, logout, dark, toggleDark }}>
       {children}
     </AppContext.Provider>
   );
