@@ -60,6 +60,17 @@ class PeriodViewSet(viewsets.ModelViewSet):
             raise ValidationError({"school": "A valid institution is required."})
         serializer.save(school=school)
 
+    def perform_update(self, serializer):
+        period = serializer.instance
+        if period.timetable_entries.filter(timetable__status=TimetableStatus.PUBLISHED).exists():
+            raise ValidationError("This period is used by a published timetable and is read-only.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.timetable_entries.filter(timetable__status=TimetableStatus.PUBLISHED).exists():
+            raise ValidationError("This period is used by a published timetable and cannot be deleted.")
+        instance.delete()
+
 
 class TimetableViewSet(viewsets.ModelViewSet):
     serializer_class = TimetableSerializer
@@ -89,7 +100,22 @@ class TimetableViewSet(viewsets.ModelViewSet):
             school = user_school(self.request.user)
         if school is None:
             raise ValidationError({"school": "A valid institution is required."})
-        serializer.save(school=school)
+        academic_year = serializer.validated_data["academic_year"]
+        term = serializer.validated_data["term"]
+        requested_version = serializer.validated_data.get("version") or 1
+        if Timetable.objects.filter(school=school, academic_year=academic_year, term=term, version=requested_version).exists():
+            requested_version = (Timetable.objects.filter(school=school, academic_year=academic_year, term=term).order_by("-version").values_list("version", flat=True).first() or 0) + 1
+        serializer.save(school=school, version=requested_version, status=TimetableStatus.DRAFT)
+
+    def perform_update(self, serializer):
+        if serializer.instance.status == TimetableStatus.PUBLISHED:
+            raise ValidationError("Published timetables are read-only. Create a new version to make changes.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.status == TimetableStatus.PUBLISHED:
+            raise ValidationError("Published timetables are read-only. Create a new version to make changes.")
+        instance.delete()
 
     @action(detail=True, methods=["post"], url_path="publish")
     def publish(self, request, pk=None):
