@@ -18,7 +18,6 @@ import { Communication } from './pages/Communication';
 import { Analytics } from './pages/Analytics';
 import { Reports } from './pages/Reports';
 
-const ADMIN = ['admin'] as const;
 const STAFF = ['admin', 'teacher'] as const;
 const PEOPLE = ['admin', 'teacher'] as const;
 const LEARNING = ['admin', 'teacher', 'student'] as const;
