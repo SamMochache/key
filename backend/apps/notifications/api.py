@@ -3,7 +3,7 @@ from django.utils import timezone
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
 
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from apps.assessments.permissions import get_user_school
 from .models import Notification
 
 
@@ -15,18 +15,16 @@ class NotificationView(views.APIView):
         qs = Notification.objects.filter(recipient=request.user)
         if school is not None:
             qs = qs.filter(school_id=school.id)
-        unread = request.query_params.get("unread")
-        if unread in {"1", "true", "True"}:
-            qs = qs.filter(read_at__isnull=True)
-        results = []
-        for item in qs[:50]:
-            results.append({
-                "id": str(item.id), "title": item.title, "body": item.body,
-                "type": item.notification_type, "link": item.link,
-                "is_read": item.is_read, "created_at": item.created_at,
-                "read_at": item.read_at,
-            })
-        return JsonResponse({"results": results, "unread_count": qs.filter(read_at__isnull=True).count() if unread else Notification.objects.filter(recipient=request.user, read_at__isnull=True, **({"school_id": school.id} if school else {})).count()})
+        unread_count = qs.filter(read_at__isnull=True).count()
+        unread = request.query_params.get("unread") in {"1", "true", "True"}
+        visible = qs.filter(read_at__isnull=True) if unread else qs
+        results = [{
+            "id": str(item.id), "title": item.title, "body": item.body,
+            "type": item.notification_type, "link": item.link,
+            "is_read": item.is_read, "created_at": item.created_at,
+            "read_at": item.read_at,
+        } for item in visible[:50]]
+        return JsonResponse({"results": results, "unread_count": unread_count})
 
 
 class NotificationReadView(views.APIView):
