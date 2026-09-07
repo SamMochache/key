@@ -4,13 +4,13 @@ import { Link } from 'react-router-dom';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import { cn } from '../lib/utils';
-import { listAcademicYears, listStudents, listTerms, type ApiAcademicYear, type ApiStudent, type ApiTerm } from '../lib/api';
-import { downloadStudentReport } from '../lib/reportsApi';
+import { listAcademicYears, listClassrooms, listStudents, listTerms, type ApiAcademicYear, type ApiClassroom, type ApiStudent, type ApiTerm } from '../lib/api';
+import { downloadClassReport, downloadStudentReport } from '../lib/reportsApi';
 import { useApp } from '../context/AppContext';
 
 const reports = [
   { title: 'Attendance Report', desc: 'Presence rates by class, month, and student.', icon: CalendarCheck, tone: 'brand', to: '/analytics' },
-  { title: 'Class Report', desc: 'A snapshot of each learning community.', icon: School, tone: 'emerald', to: '/classes' },
+  { title: 'Class Report', desc: 'A printable academic snapshot of each learning community.', icon: School, tone: 'emerald', to: '#class-report' },
   { title: 'Student Progress Report', desc: 'Published assessment, attendance, and competency outcomes.', icon: TrendingUp, tone: 'warm', to: '#student-report' },
   { title: 'AI Narrative Report', desc: 'Warm, growth-focused stories per child.', icon: Sparkles, tone: 'emerald', to: '/ai-reports' },
   { title: 'Performance Analytics', desc: 'Outcomes, trends, and comparisons.', icon: BarChart3, tone: 'brand', to: '/analytics' },
@@ -26,13 +26,16 @@ const tone: Record<string, string> = {
 export function Reports() {
   const { role } = useApp();
   const [students, setStudents] = useState<ApiStudent[]>([]);
+  const [classrooms, setClassrooms] = useState<ApiClassroom[]>([]);
   const [years, setYears] = useState<ApiAcademicYear[]>([]);
   const [terms, setTerms] = useState<ApiTerm[]>([]);
   const [student, setStudent] = useState('');
+  const [classroom, setClassroom] = useState('');
   const [year, setYear] = useState('');
   const [term, setTerm] = useState('');
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
+  const [generatingStudent, setGeneratingStudent] = useState(false);
+  const [generatingClass, setGeneratingClass] = useState(false);
   const [error, setError] = useState('');
   const [reportError, setReportError] = useState('');
 
@@ -41,9 +44,14 @@ export function Reports() {
       setLoading(false);
       return;
     }
-    Promise.all([listStudents({ isActive: true }), listAcademicYears()])
-      .then(([studentData, yearData]) => {
+    Promise.all([
+      listStudents({ isActive: true }),
+      listClassrooms({ active: true }),
+      listAcademicYears(),
+    ])
+      .then(([studentData, classroomData, yearData]) => {
         setStudents(studentData);
+        setClassrooms(classroomData);
         setYears(yearData);
         if (yearData.length) setYear(yearData.find((item) => item.is_current)?.id || yearData[0].id);
       })
@@ -65,15 +73,37 @@ export function Reports() {
       .catch((err) => setReportError(err instanceof Error ? err.message : 'Unable to load terms.'));
   }, [year]);
 
+  useEffect(() => {
+    if (role === 'student' || !year) return;
+    listClassrooms({ academicYear: year, active: true })
+      .then((data) => {
+        setClassrooms(data);
+        setClassroom((current) => data.some((item) => item.id === current) ? current : '');
+      })
+      .catch((err) => setReportError(err instanceof Error ? err.message : 'Unable to load classes.'));
+  }, [year, role]);
+
   const generateStudentReport = async () => {
     setReportError('');
-    setGenerating(true);
+    setGeneratingStudent(true);
     try {
-      await downloadStudentReport({ student, academicYear: year || undefined, term: term || undefined });
+      await downloadStudentReport({ student: role === 'student' ? '' : student, academicYear: year || undefined, term: term || undefined });
     } catch (err) {
       setReportError(err instanceof Error ? err.message : 'Unable to generate the report.');
     } finally {
-      setGenerating(false);
+      setGeneratingStudent(false);
+    }
+  };
+
+  const generateClassReport = async () => {
+    setReportError('');
+    setGeneratingClass(true);
+    try {
+      await downloadClassReport({ classroom, academicYear: year || undefined, term: term || undefined });
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : 'Unable to generate the class report.');
+    } finally {
+      setGeneratingClass(false);
     }
   };
 
@@ -122,19 +152,64 @@ export function Reports() {
           <div className="mt-5 flex justify-end">
             <button
               type="button"
-              disabled={loading || generating || (role !== 'student' && !student)}
+              disabled={loading || generatingStudent || (role !== 'student' && !student)}
               onClick={generateStudentReport}
               className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <DownloadIcon className="h-4 w-4" />
-              {generating ? 'Generating…' : 'Generate PDF'}
+              {generatingStudent ? 'Generating…' : 'Generate PDF'}
             </button>
           </div>
         </Card>
       </div>
 
+      {role !== 'student' && (
+        <div id="class-report" className="mb-8">
+          <Card className="p-5">
+            <div className="flex flex-col gap-1 mb-5">
+              <h2 className="font-display font-bold text-lg text-slate-800 dark:text-slate-100">Class Report</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Generate a printable class snapshot with learner performance and attendance.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Class
+                <select value={classroom} onChange={(event) => setClassroom(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                  <option value="">Select class</option>
+                  {classrooms.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.code}</option>)}
+                </select>
+              </label>
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Academic Year
+                <select value={year} onChange={(event) => setYear(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                  <option value="">Select year</option>
+                  {years.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </label>
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Term
+                <select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                  <option value="">Select term</option>
+                  {terms.map((item) => <option key={item.id} value={item.id}>Term {item.term_number}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                disabled={loading || generatingClass || !classroom}
+                onClick={generateClassReport}
+                className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <DownloadIcon className="h-4 w-4" />
+                {generatingClass ? 'Generating…' : 'Generate Class PDF'}
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {reports.filter((report) => report.title !== 'Student Progress Report').map((r) => {
+        {reports.filter((report) => report.title !== 'Student Progress Report' && report.title !== 'Class Report').map((r) => {
           const Icon = r.icon;
           return (
             <Card key={r.title} className="p-5 flex flex-col hover:-translate-y-0.5 transition-transform">
