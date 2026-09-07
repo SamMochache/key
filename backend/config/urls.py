@@ -30,6 +30,7 @@ urlpatterns = [
     path("api/", include("apps.attendance.api_urls")),
     path("api/", include("apps.assessments.api_urls")),
     path("api/", include("apps.portfolio.api_urls")),
+    path("api/", include("apps.communication.api_urls")),
     path("api/", include("apps.analytics_urls")),
     path("api/reports/student/", StudentReportView.as_view(), name="student-report"),
     path("api/reports/class/", ClassReportView.as_view(), name="class-report"),
