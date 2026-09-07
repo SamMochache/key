@@ -63,10 +63,20 @@ class AnalyticsView(views.APIView):
         graded = submissions.filter(status="GRADED").count()
         completion_rate = (graded / submission_total * 100) if submission_total else None
 
-        # CompetencyEvaluation stores the achieved competency level, not a numeric
-        # field named `score`. The model exposes `level` (1-5), so analytics must
-        # aggregate that field directly.
-        competency_values = [float(value) for value in competencies.values_list("level", flat=True) if value is not None]
+        # CompetencyEvaluation.level is a TextChoices field, not a numeric column.
+        # Keep the numeric scale in analytics rather than asking PostgreSQL to AVG()
+        # a VARCHAR column. Proficient and Advanced are considered secure outcomes.
+        competency_scale = {
+            "BEGINNING": 1,
+            "DEVELOPING": 2,
+            "PROFICIENT": 3,
+            "ADVANCED": 4,
+        }
+        competency_values = [
+            competency_scale[level]
+            for level in competencies.values_list("level", flat=True)
+            if level in competency_scale
+        ]
         outcomes_secure = (
             round(sum(1 for value in competency_values if value >= 3) / len(competency_values) * 100, 1)
             if competency_values else None
@@ -112,9 +122,24 @@ class AnalyticsView(views.APIView):
                 "attendance": round(class_present / class_total * 100, 1) if class_total else 0,
             })
 
+        # Competency levels are categorical strings (BEGINNING/DEVELOPING/
+        # PROFICIENT/ADVANCED), so calculate the radar values in Python instead
+        # of using PostgreSQL AVG() on the VARCHAR `level` column.
         competency_rows = []
-        for row in competencies.values("competency__name", "competency__sequence").annotate(value=Avg("level")).order_by("competency__sequence")[:8]:
-            competency_rows.append({"skill": row["competency__name"], "value": round(float(row["value"] or 0) / 5 * 100, 1)})
+        competency_groups = competencies.values(
+            "competency__name",
+            "competency__sequence",
+            "level",
+        ).order_by("competency__sequence")
+        grouped_levels = {}
+        for row in competency_groups:
+            key = (row["competency__name"], row["competency__sequence"])
+            grouped_levels.setdefault(key, []).append(row["level"])
+
+        for (name, sequence), levels in sorted(grouped_levels.items(), key=lambda item: item[0][1])[:8]:
+            numeric_levels = [competency_scale[level] for level in levels if level in competency_scale]
+            average_level = sum(numeric_levels) / len(numeric_levels) if numeric_levels else 0
+            competency_rows.append({"skill": name, "value": round(average_level / 4 * 100, 1)})
 
         return Response({
             "summary": {
