@@ -108,7 +108,6 @@ export function AIReports() {
     }
   };
 
-  const selectedStudent = students.find((item) => item.id === student);
   const narrativeSections: Array<[keyof AINarrativeResponse['narrative'], string]> = [
     ['summary', 'Overall Progress'],
     ['strengths', 'Strengths'],
@@ -118,6 +117,7 @@ export function AIReports() {
   ];
 
   const statusLabel = result?.status === 'PUBLISHED' ? 'Published' : result?.status === 'REVIEWED' ? 'Reviewed' : 'AI Draft · Review Required';
+  const statusTone = result?.status === 'PUBLISHED' ? 'emerald' : result?.status === 'REVIEWED' ? 'brand' : 'warm';
 
   return (
     <div>
@@ -184,7 +184,7 @@ export function AIReports() {
                   <p className="font-display font-extrabold text-xl">{result.facts.learner.first_name} — Learning Progress Report</p>
                   <p className="text-brand-100 text-sm mt-1">{result.facts.period.academic_year} · Term {result.facts.period.term} · {result.facts.learner.class}</p>
                 </div>
-                <Badge tone={result.status === 'PUBLISHED' ? 'emerald' : result.status === 'REVIEWED' ? 'blue' : 'amber'}>{statusLabel}</Badge>
+                <Badge tone={statusTone}>{statusLabel}</Badge>
               </div>
             </div>
 
