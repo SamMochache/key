@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2Icon, Loader2Icon, PencilIcon, PrinterIcon, SendIcon, SparklesIcon } from 'lucide-react';
+import { CheckCircle2Icon, HistoryIcon, Loader2Icon, PencilIcon, PrinterIcon, SendIcon, SparklesIcon } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { EmptyState } from '../components/ui/EmptyState';
 import { listAcademicYears, listStudents, listTerms, type ApiAcademicYear, type ApiStudent, type ApiTerm } from '../lib/api';
+import { listAINarrativeReportHistory, type AINarrativeHistoryItem } from '../lib/aiNarrativeHistoryApi';
 import { generateAINarrativeReport, listAINarrativeReports, publishAINarrativeReport, saveAINarrativeReport, type AINarrativeResponse } from '../lib/reportsApi';
 
 export function AIReports() {
@@ -16,6 +17,8 @@ export function AIReports() {
   const [year, setYear] = useState('');
   const [term, setTerm] = useState('');
   const [result, setResult] = useState<AINarrativeResponse | null>(null);
+  const [history, setHistory] = useState<AINarrativeHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingSaved, setLoadingSaved] = useState(false);
@@ -47,7 +50,7 @@ export function AIReports() {
   }, [year]);
 
   useEffect(() => {
-    if (!student || !year || !term) { setResult(null); return; }
+    if (!student || !year || !term) { setResult(null); setHistory([]); return; }
     let cancelled = false;
     setLoadingSaved(true);
     setError('');
@@ -62,6 +65,17 @@ export function AIReports() {
       .finally(() => { if (!cancelled) setLoadingSaved(false); });
     return () => { cancelled = true; };
   }, [student, year, term]);
+
+  useEffect(() => {
+    if (!result) { setHistory([]); return; }
+    let cancelled = false;
+    setHistoryLoading(true);
+    listAINarrativeReportHistory(result.id)
+      .then((data) => { if (!cancelled) setHistory(data.results); })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load report history.'); })
+      .finally(() => { if (!cancelled) setHistoryLoading(false); });
+    return () => { cancelled = true; };
+  }, [result]);
 
   const generate = async () => {
     setError('');
@@ -172,7 +186,7 @@ export function AIReports() {
           </Card>
         </div>
 
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
           {loadingSaved && <Card className="p-10 flex flex-col items-center justify-center text-center"><Loader2Icon className="h-8 w-8 animate-spin text-brand-600 mb-4" /><p className="font-display font-bold text-slate-800 dark:text-slate-100">Checking saved report…</p></Card>}
           {!result && !loadingSaved && !generating && <Card><EmptyState icon="Sparkles" title="Ready when you are" description="Choose a student, academic year, and term, then generate a grounded growth narrative." /></Card>}
           {generating && <Card className="p-10 flex flex-col items-center justify-center text-center"><SparklesIcon className="h-10 w-10 text-emerald-500 animate-pulse mb-4" /><p className="font-display font-bold text-slate-800 dark:text-slate-100">Building the narrative…</p><p className="text-sm text-slate-400 mt-1">Analyzing published assessments, attendance, competencies, and portfolio evidence.</p></Card>}
@@ -208,6 +222,25 @@ export function AIReports() {
             </div>}
 
             <div className="px-7 py-5 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400">Generated with {result.model}. This report is grounded in published KEY records. Publication makes the reviewed narrative the official version for this learner and period.</div>
+          </Card>}
+
+          {result && <Card className="p-6 no-print">
+            <div className="flex items-center gap-2 mb-4">
+              <HistoryIcon className="h-5 w-5 text-brand-600" />
+              <div>
+                <h3 className="font-display font-bold text-slate-800 dark:text-slate-100">Report History</h3>
+                <p className="text-xs text-slate-400">A traceable record of generation, editing, review, and publication.</p>
+              </div>
+            </div>
+            {historyLoading ? <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2Icon className="h-4 w-4 animate-spin" /> Loading history…</div> : history.length === 0 ? <p className="text-sm text-slate-400">No history recorded yet.</p> : <div className="space-y-3">
+              {history.map((item) => <div key={item.id} className="flex gap-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-3">
+                <div className="mt-0.5"><Badge tone={item.action === 'PUBLISHED' ? 'emerald' : item.action === 'GENERATED' ? 'warm' : 'brand'}>{item.action}</Badge></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{item.actor.name}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{new Date(item.occurred_at).toLocaleString()}{item.model ? ` · ${item.model}` : ''}</p>
+                </div>
+              </div>)}
+            </div>}
           </Card>}
         </div>
       </div>
