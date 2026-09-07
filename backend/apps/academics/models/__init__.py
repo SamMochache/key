@@ -7,6 +7,7 @@ from .subject import Subject
 from .term import Term
 from .stage_subject import StageSubject
 from .classroom import Classroom
+from .classroom_teacher import ClassroomTeacherAssignment
 
 __all__ = [
     "AcademicYear",
@@ -17,5 +18,6 @@ __all__ = [
     "Subject",
     "Term",
     "StageSubject",
-    "Classroom"
+    "Classroom",
+    "ClassroomTeacherAssignment",
 ]
