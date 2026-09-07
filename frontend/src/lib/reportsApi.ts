@@ -87,6 +87,19 @@ export interface AINarrativeResponse {
   published_at: string | null;
 }
 
+export interface PublishedAINarrativeResponse {
+  id: string;
+  student: string;
+  student_name: string;
+  academic_year: string;
+  academic_year_name: string;
+  term: string;
+  term_number: number;
+  narrative: AINarrativeResponse['narrative'];
+  facts: AINarrativeResponse['facts'];
+  published_at: string | null;
+}
+
 async function jsonRequest(path: string, options: RequestInit = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
@@ -129,4 +142,16 @@ export async function saveAINarrativeReport(id: string, narrative: AINarrativeRe
 
 export async function publishAINarrativeReport(id: string) {
   return jsonRequest(`/reports/ai-narrative/${id}/publish/`, { method: 'POST' }) as Promise<AINarrativeResponse>;
+}
+
+export async function listPublishedAINarrativeReports(params: { academicYear?: string; term?: string } = {}) {
+  const query = new URLSearchParams();
+  if (params.academicYear) query.set('academic_year', params.academicYear);
+  if (params.term) query.set('term', params.term);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return jsonRequest(`/reports/ai-narrative/published/${suffix}`) as Promise<{ results: PublishedAINarrativeResponse[] }>;
+}
+
+export async function downloadPublishedAINarrativePdf(id: string) {
+  return downloadPdf(`/reports/ai-narrative/${id}/pdf/`, {});
 }
