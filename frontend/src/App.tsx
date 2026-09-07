@@ -13,6 +13,7 @@ import { ClassProfile } from './pages/ClassProfile';
 import { Attendance } from './pages/Attendance';
 import { Academics } from './pages/Academics';
 import { Lessons } from './pages/Lessons';
+import { Timetables } from './pages/Timetables';
 import { Assessments } from './pages/Assessments';
 import { Evidence } from './pages/Evidence';
 import { AIReports } from './pages/AIReports';
@@ -52,6 +53,7 @@ export function App() {
               <Route element={<ProtectedRoute roles={[...STAFF]} />}>
                 <Route path="/attendance" element={<Attendance />} />
                 <Route path="/lessons" element={<Lessons />} />
+                <Route path="/timetables" element={<Timetables />} />
                 <Route path="/assessments" element={<Assessments />} />
                 <Route path="/ai-reports" element={<AIReports />} />
                 <Route path="/parents" element={<Parents />} />
