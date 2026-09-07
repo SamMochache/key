@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from apps.teachers.models import Teacher
 
-from .models import AcademicYear, CambridgeStage, Classroom, ClassroomTeacherAssignment, Curriculum, MontessoriLevel, StageSubject, Subject, Term
+from .models import AcademicYear, CambridgeStage, Classroom, ClassroomTeacherAssignment, Curriculum, MontessoriLevel, Programme, StageSubject, Subject, Term
 
 
 class AcademicYearSerializer(serializers.ModelSerializer):
@@ -10,7 +10,7 @@ class AcademicYearSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AcademicYear
-        fields = ["id", "school", "school_name", "name", "start_date", "end_date", "is_current", "created_at", "updated_at"]
+        fields = ["id", "school", "school_name", "name", "start_date", "end_date", "is_current", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "school_name", "created_at", "updated_at"]
 
 
@@ -22,6 +22,16 @@ class TermSerializer(serializers.ModelSerializer):
         fields = ["id", "academic_year", "academic_year_name", "term_number", "start_date", "end_date", "is_current", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "academic_year_name", "created_at", "updated_at"]
 
+    def validate(self, attrs):
+        academic_year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
+        start_date = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end_date = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        if academic_year and not academic_year.is_active:
+            raise serializers.ValidationError({"academic_year": "Terms cannot be assigned to an inactive academic year."})
+        if start_date and end_date and start_date > end_date:
+            raise serializers.ValidationError({"end_date": "End date must be on or after the start date."})
+        return attrs
+
 
 class CurriculumSerializer(serializers.ModelSerializer):
     subject_count = serializers.IntegerField(read_only=True)
@@ -30,6 +40,15 @@ class CurriculumSerializer(serializers.ModelSerializer):
         model = Curriculum
         fields = ["id", "name", "description", "version", "is_active", "subject_count", "created_at", "updated_at"]
         read_only_fields = ["id", "subject_count", "created_at", "updated_at"]
+
+
+class ProgrammeSerializer(serializers.ModelSerializer):
+    curriculum_name = serializers.CharField(source="curriculum.name", read_only=True)
+
+    class Meta:
+        model = Programme
+        fields = ["id", "curriculum", "curriculum_name", "name", "description", "display_order", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["id", "curriculum_name", "created_at", "updated_at"]
 
 
 class SubjectSerializer(serializers.ModelSerializer):
@@ -76,12 +95,7 @@ class ClassroomSerializer(serializers.ModelSerializer):
     montessori_level_name = serializers.CharField(source="montessori_level.name", read_only=True)
     student_count = serializers.IntegerField(read_only=True)
     subject_count = serializers.IntegerField(read_only=True)
-    primary_teacher = serializers.PrimaryKeyRelatedField(
-        queryset=Teacher.objects.select_related("user"),
-        required=False,
-        allow_null=True,
-        write_only=True,
-    )
+    primary_teacher = serializers.PrimaryKeyRelatedField(queryset=Teacher.objects.select_related("user"), required=False, allow_null=True, write_only=True)
     primary_teacher_id = serializers.SerializerMethodField()
     primary_teacher_name = serializers.SerializerMethodField()
 
@@ -89,14 +103,7 @@ class ClassroomSerializer(serializers.ModelSerializer):
         return str(obj.term)
 
     def _primary_assignment(self, obj):
-        return next(
-            (
-                assignment
-                for assignment in obj.teacher_assignments.all()
-                if assignment.role == ClassroomTeacherAssignment.Role.PRIMARY and assignment.is_active
-            ),
-            None,
-        )
+        return next((assignment for assignment in obj.teacher_assignments.all() if assignment.role == ClassroomTeacherAssignment.Role.PRIMARY and assignment.is_active), None)
 
     def get_primary_teacher_id(self, obj):
         assignment = self._primary_assignment(obj)
@@ -104,9 +111,7 @@ class ClassroomSerializer(serializers.ModelSerializer):
 
     def get_primary_teacher_name(self, obj):
         assignment = self._primary_assignment(obj)
-        if not assignment:
-            return None
-        return assignment.teacher.user.full_name
+        return assignment.teacher.user.full_name if assignment else None
 
     def validate(self, attrs):
         school = attrs.get("school")
@@ -116,13 +121,11 @@ class ClassroomSerializer(serializers.ModelSerializer):
             user = self.context.get("request").user if self.context.get("request") else None
             teacher_profile = getattr(user, "teacher_profile", None)
             school = teacher_profile.school if teacher_profile else None
-
         teacher = attrs.get("primary_teacher")
         if teacher is not None and school is not None and teacher.school_id != school.id:
             raise serializers.ValidationError({"primary_teacher": "Teacher must belong to the same institution as the class."})
-        if teacher is not None and not teacher.status == "ACTIVE":
+        if teacher is not None and teacher.status != "ACTIVE":
             raise serializers.ValidationError({"primary_teacher": "Only active teachers can be assigned as class teachers."})
-
         academic_year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
         term = attrs.get("term", getattr(self.instance, "term", None))
         stage = attrs.get("cambridge_stage", getattr(self.instance, "cambridge_stage", None))
@@ -138,42 +141,19 @@ class ClassroomSerializer(serializers.ModelSerializer):
         teacher = validated_data.pop("primary_teacher", None)
         classroom = Classroom.objects.create(**validated_data)
         if teacher is not None:
-            ClassroomTeacherAssignment.objects.create(
-                classroom=classroom,
-                teacher=teacher,
-                role=ClassroomTeacherAssignment.Role.PRIMARY,
-            )
+            ClassroomTeacherAssignment.objects.create(classroom=classroom, teacher=teacher, role=ClassroomTeacherAssignment.Role.PRIMARY)
         return classroom
 
     def update(self, instance, validated_data):
         teacher = validated_data.pop("primary_teacher", serializers.empty)
         classroom = super().update(instance, validated_data)
         if teacher is not serializers.empty:
-            ClassroomTeacherAssignment.objects.filter(
-                classroom=classroom,
-                role=ClassroomTeacherAssignment.Role.PRIMARY,
-                is_active=True,
-            ).update(is_active=False)
+            ClassroomTeacherAssignment.objects.filter(classroom=classroom, role=ClassroomTeacherAssignment.Role.PRIMARY, is_active=True).update(is_active=False)
             if teacher is not None:
-                ClassroomTeacherAssignment.objects.update_or_create(
-                    classroom=classroom,
-                    teacher=teacher,
-                    role=ClassroomTeacherAssignment.Role.PRIMARY,
-                    defaults={"is_active": True},
-                )
+                ClassroomTeacherAssignment.objects.update_or_create(classroom=classroom, teacher=teacher, role=ClassroomTeacherAssignment.Role.PRIMARY, defaults={"is_active": True})
         return classroom
 
     class Meta:
         model = Classroom
-        fields = [
-            "id", "school", "school_name", "academic_year", "academic_year_name",
-            "term", "term_number", "term_name", "cambridge_stage", "stage_name",
-            "montessori_level", "montessori_level_name", "name", "code", "capacity",
-            "student_count", "subject_count", "primary_teacher", "primary_teacher_id",
-            "primary_teacher_name", "is_active", "created_at", "updated_at",
-        ]
-        read_only_fields = [
-            "id", "school_name", "academic_year_name", "term_number", "term_name",
-            "stage_name", "montessori_level_name", "student_count", "subject_count",
-            "primary_teacher_id", "primary_teacher_name", "created_at", "updated_at",
-        ]
+        fields = ["id", "school", "school_name", "academic_year", "academic_year_name", "term", "term_number", "term_name", "cambridge_stage", "stage_name", "montessori_level", "montessori_level_name", "name", "code", "capacity", "student_count", "subject_count", "primary_teacher", "primary_teacher_id", "primary_teacher_name", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["id", "school_name", "academic_year_name", "term_number", "term_name", "stage_name", "montessori_level_name", "student_count", "subject_count", "primary_teacher_id", "primary_teacher_name", "created_at", "updated_at"]
