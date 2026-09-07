@@ -18,6 +18,7 @@ import { Evidence } from './pages/Evidence';
 import { AIReports } from './pages/AIReports';
 import { StudentAIReports } from './pages/StudentAIReports';
 import { ParentAIReports } from './pages/ParentAIReports';
+import { Parents } from './pages/Parents';
 import { Portfolio } from './pages/Portfolio';
 import { Calendar } from './pages/Calendar';
 import { Communication } from './pages/Communication';
@@ -53,6 +54,7 @@ export function App() {
                 <Route path="/lessons" element={<Lessons />} />
                 <Route path="/assessments" element={<Assessments />} />
                 <Route path="/ai-reports" element={<AIReports />} />
+                <Route path="/parents" element={<Parents />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/reports" element={<Reports />} />
               </Route>
