@@ -19,7 +19,11 @@ if not SECRET_KEY:
 
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() in {"1", "true", "yes", "on"}
 
-ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",") if host.strip()]
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
+    if host.strip()
+]
 
 # -----------------------------------------------------------------------------
 # Applications
@@ -78,6 +82,7 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "config.urls"
+
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
@@ -87,7 +92,7 @@ ASGI_APPLICATION = "config.asgi.application"
 
 TEMPLATES = [
     {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "BACKEND": "django.core.handlers.wsgi.WSGIHandler",
         "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
@@ -105,11 +110,17 @@ TEMPLATES = [
 # -----------------------------------------------------------------------------
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL must be set")
 
 DATABASES = {
-    "default": dj_database_url.parse(DATABASE_URL, conn_max_age=0, conn_health_checks=True, ssl_require=True)
+    "default": dj_database_url.parse(
+        DATABASE_URL,
+        conn_max_age=0,
+        conn_health_checks=True,
+        ssl_require=True,
+    )
 }
 
 # -----------------------------------------------------------------------------
@@ -124,3 +135,88 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+# -----------------------------------------------------------------------------
+# REST Framework
+# -----------------------------------------------------------------------------
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+    "DEFAULT_FILTER_BACKENDS": (
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.OrderingFilter",
+        "rest_framework.filters.SearchFilter",
+    ),
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+# -----------------------------------------------------------------------------
+# CORS / CSRF
+# -----------------------------------------------------------------------------
+
+CORS_ALLOWED_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+# -----------------------------------------------------------------------------
+# OpenAPI
+# -----------------------------------------------------------------------------
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Key International School API",
+    "DESCRIPTION": "Enterprise School Management System",
+    "VERSION": "1.0.0",
+}
+
+# -----------------------------------------------------------------------------
+# Internationalization
+# -----------------------------------------------------------------------------
+
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "Africa/Nairobi"
+USE_I18N = True
+USE_TZ = True
+
+# -----------------------------------------------------------------------------
+# Static / Media Files
+# -----------------------------------------------------------------------------
+
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+
+# -----------------------------------------------------------------------------
+# Production security defaults
+# -----------------------------------------------------------------------------
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+
+# -----------------------------------------------------------------------------
+# Default Primary Key
+# -----------------------------------------------------------------------------
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
