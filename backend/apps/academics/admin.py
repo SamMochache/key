@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AcademicYear, CambridgeStage, Classroom, Curriculum, MontessoriLevel, Programme, StageSubject, Subject, Term
+from .models import AcademicYear, CambridgeStage, Classroom, ClassroomTeacherAssignment, Curriculum, MontessoriLevel, Programme, StageSubject, Subject, Term
 
 
 @admin.register(Curriculum)
@@ -80,3 +80,11 @@ class ClassroomAdmin(admin.ModelAdmin):
     search_fields = ("name", "code", "school__name")
     list_filter = ("school", "academic_year", "term", "cambridge_stage", "is_active")
     ordering = ("academic_year", "cambridge_stage", "name")
+
+
+@admin.register(ClassroomTeacherAssignment)
+class ClassroomTeacherAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("classroom", "teacher", "role", "is_active", "created_at")
+    search_fields = ("classroom__name", "classroom__code", "teacher__user__first_name", "teacher__user__last_name")
+    list_filter = ("role", "is_active", "classroom__school")
+    autocomplete_fields = ("classroom", "teacher")
