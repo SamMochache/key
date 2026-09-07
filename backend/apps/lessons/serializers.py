@@ -14,15 +14,19 @@ class LessonSessionSerializer(serializers.ModelSerializer):
     weekday = serializers.CharField(source="timetable_entry.weekday", read_only=True)
     start_time = serializers.TimeField(source="timetable_entry.period.start_time", read_only=True)
     end_time = serializers.TimeField(source="timetable_entry.period.end_time", read_only=True)
+    room = serializers.CharField(source="timetable_entry.room", read_only=True)
 
     class Meta:
         model = LessonSession
         fields = [
             "id", "timetable_entry", "classroom", "classroom_name", "subject", "subject_name",
             "teacher", "teacher_name", "term", "term_number", "weekday", "start_time", "end_time",
-            "lesson_date", "started_at", "ended_at", "status", "remarks", "created_at", "updated_at",
+            "room", "lesson_date", "started_at", "ended_at", "status", "remarks", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "classroom", "classroom_name", "subject", "subject_name", "teacher_name", "term", "term_number", "weekday", "start_time", "end_time", "created_at", "updated_at"]
+        read_only_fields = [
+            "id", "classroom", "classroom_name", "subject", "subject_name", "teacher_name", "term",
+            "term_number", "weekday", "start_time", "end_time", "room", "created_at", "updated_at",
+        ]
 
     def validate(self, attrs):
         entry = attrs.get("timetable_entry", getattr(self.instance, "timetable_entry", None))
@@ -30,9 +34,10 @@ class LessonSessionSerializer(serializers.ModelSerializer):
         date = attrs.get("lesson_date", getattr(self.instance, "lesson_date", None))
         if not entry or not teacher or not date:
             return attrs
-        if entry.classroom.school_id != getattr(teacher, "teacher_profile", None).school_id:
+        teacher_profile = getattr(teacher, "teacher_profile", None)
+        if teacher_profile is None or entry.classroom.school_id != teacher_profile.school_id:
             raise serializers.ValidationError({"teacher": "Teacher must belong to the same institution as the classroom."})
-        if not teacher.is_active:
+        if not teacher.is_active or teacher_profile.status != "ACTIVE":
             raise serializers.ValidationError({"teacher": "Only active teachers can teach lessons."})
         if entry.teacher_subject.teacher.user_id != teacher.id:
             raise serializers.ValidationError({"teacher": "Teacher must match the teacher assigned to the timetable entry."})
