@@ -1,9 +1,8 @@
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, serializers, viewsets
+from rest_framework.exceptions import PermissionDenied
 
 from .models import Competency
 from .permissions import UserRole, get_user_role, get_user_school
-from rest_framework.exceptions import PermissionDenied
-from rest_framework import serializers
 
 
 class CompetencyReadSerializer(serializers.ModelSerializer):
