@@ -6,6 +6,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from apps.ai_narrative_published_api import PublishedAINarrativeReportPdfView, PublishedAINarrativeReportView
 from apps.ai_narrative_report_api import AINarrativeReportPublishView, AINarrativeReportView
+from apps.ai_narrative_report_history_api import AINarrativeReportHistoryView
 from apps.assessment_report_api import AssessmentResultsReportView
 from apps.attendance_report_api import AttendanceReportView
 from apps.class_report_api import ClassReportView
@@ -37,6 +38,7 @@ urlpatterns = [
     path("api/reports/portfolio/", PortfolioEvidenceReportView.as_view(), name="portfolio-evidence-report"),
     path("api/reports/consolidated/", ConsolidatedReportView.as_view(), name="consolidated-report"),
     path("api/reports/ai-narrative/", AINarrativeReportView.as_view(), name="ai-narrative-report"),
+    path("api/reports/ai-narrative/history/", AINarrativeReportHistoryView.as_view(), name="ai-narrative-report-history"),
     path("api/reports/ai-narrative/published/", PublishedAINarrativeReportView.as_view(), name="published-ai-narrative-reports"),
     path("api/reports/ai-narrative/<uuid:report_id>/publish/", AINarrativeReportPublishView.as_view(), name="ai-narrative-report-publish"),
     path("api/reports/ai-narrative/<uuid:report_id>/pdf/", PublishedAINarrativeReportPdfView.as_view(), name="published-ai-narrative-report-pdf"),
