@@ -4,6 +4,7 @@ from rest_framework.permissions import BasePermission
 class UserRole:
     ADMIN = "admin"
     TEACHER = "teacher"
+    PARENT = "parent"
     STUDENT = "student"
     USER = "user"
 
@@ -16,16 +17,20 @@ def get_user_role(user):
         return UserRole.ADMIN
     if hasattr(user, "teacher_profile"):
         return UserRole.TEACHER
+    if hasattr(user, "parent_profile"):
+        return UserRole.PARENT
     if hasattr(user, "student_profile"):
         return UserRole.STUDENT
     return UserRole.USER
 
 
 def get_user_school(user):
-    """Return the school associated with a teacher/student, otherwise None."""
+    """Return the school associated with a teacher, parent, or student."""
     role = get_user_role(user)
     if role == UserRole.TEACHER:
         return user.teacher_profile.school
+    if role == UserRole.PARENT:
+        return user.parent_profile.school
     if role == UserRole.STUDENT:
         return user.student_profile.school
     return None
@@ -46,7 +51,7 @@ class AssessmentAccessPermission(BasePermission):
 
     def has_permission(self, request, view):
         role = get_user_role(request.user)
-        if role == UserRole.ADMIN or role == UserRole.TEACHER:
+        if role in {UserRole.ADMIN, UserRole.TEACHER}:
             return True
         return role == UserRole.STUDENT and request.method in {"GET", "HEAD", "OPTIONS"}
 
