@@ -58,16 +58,19 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
                 return queryset.none()
             queryset = queryset.filter(classroom__school_id=school_id)
 
-            student = getattr(self.request.user, "student_profile", None)
-            if student is not None:
-                queryset = queryset.filter(student_id=student.id)
+            student_profile = getattr(self.request.user, "student_profile", None)
+            if student_profile is not None:
+                queryset = queryset.filter(student_id=student_profile.id)
 
+        student = self.request.query_params.get("student")
         classroom = self.request.query_params.get("classroom")
         academic_year = self.request.query_params.get("academic_year")
         term = self.request.query_params.get("term")
         status = self.request.query_params.get("status")
         search = self.request.query_params.get("search", "").strip()
 
+        if student:
+            queryset = queryset.filter(student_id=student)
         if classroom:
             queryset = queryset.filter(classroom_id=classroom)
         if academic_year:
