@@ -19,20 +19,25 @@ from core.constants.teacher import EmploymentType, TeacherStatus
 class Command(BaseCommand):
     help = "Destructively reset the development database and load a complete KEY demo dataset."
 
-    PASSWORDS = {
-        "admin@keydemo.test": "KeyAdmin2026!",
-        "teacher@keydemo.test": "KeyTeacher2026!",
-        "parent@keydemo.test": "KeyParent2026!",
-        "student1@keydemo.test": "KeyStudent12026!",
-        "student2@keydemo.test": "KeyStudent22026!",
-        "student3@keydemo.test": "KeyStudent32026!",
-    }
+    EMAILS = [
+        "admin@keydemo.test",
+        "teacher@keydemo.test",
+        "parent@keydemo.test",
+        "student1@keydemo.test",
+        "student2@keydemo.test",
+        "student3@keydemo.test",
+    ]
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--confirm",
             action="store_true",
             help="Required: confirms that all database data may be deleted.",
+        )
+        parser.add_argument(
+            "--password",
+            required=True,
+            help="Development password to assign to every seeded demo account.",
         )
 
     def handle(self, *args, **options):
@@ -41,9 +46,11 @@ class Command(BaseCommand):
                 "This command deletes all database data. Re-run with --confirm."
             )
 
-        self.stdout.write(self.style.WARNING("Resetting the KEY database..."))
+        password = options["password"]
+        if len(password) < 8:
+            raise CommandError("Demo password must contain at least 8 characters.")
 
-        # Flush removes rows but preserves the migration/schema history.
+        self.stdout.write(self.style.WARNING("Resetting the KEY database..."))
         call_command("flush", interactive=False, reset_sequences=True, verbosity=0)
 
         with transaction.atomic():
@@ -59,16 +66,16 @@ class Command(BaseCommand):
                 is_active=True,
             )
 
-            admin = User.objects.create_superuser(
+            User.objects.create_superuser(
                 email="admin@keydemo.test",
-                password=self.PASSWORDS["admin@keydemo.test"],
+                password=password,
                 first_name="KEY",
                 last_name="Administrator",
             )
 
             teacher_user = User.objects.create_user(
                 email="teacher@keydemo.test",
-                password=self.PASSWORDS["teacher@keydemo.test"],
+                password=password,
                 first_name="Grace",
                 last_name="Mwangi",
                 phone_number="+254711111111",
@@ -91,7 +98,7 @@ class Command(BaseCommand):
 
             parent_user = User.objects.create_user(
                 email="parent@keydemo.test",
-                password=self.PASSWORDS["parent@keydemo.test"],
+                password=password,
                 first_name="Daniel",
                 last_name="Otieno",
                 phone_number="+254722222222",
@@ -158,21 +165,22 @@ class Command(BaseCommand):
             for email, first_name, last_name, admission, dob, gender in student_rows:
                 user = User.objects.create_user(
                     email=email,
-                    password=self.PASSWORDS[email],
+                    password=password,
                     first_name=first_name,
                     last_name=last_name,
                 )
-                student = Student.objects.create(
-                    user=user,
-                    school=school,
-                    admission_number=admission,
-                    admission_date=date(2026, 1, 5),
-                    date_of_birth=dob,
-                    gender=gender,
-                    nationality="Kenyan",
-                    is_active=True,
+                students.append(
+                    Student.objects.create(
+                        user=user,
+                        school=school,
+                        admission_number=admission,
+                        admission_date=date(2026, 1, 5),
+                        date_of_birth=dob,
+                        gender=gender,
+                        nationality="Kenyan",
+                        is_active=True,
+                    )
                 )
-                students.append(student)
 
             ParentStudentRelationship.objects.create(
                 parent=parent,
@@ -224,7 +232,7 @@ class Command(BaseCommand):
             )
             Notification.objects.create(
                 school=school,
-                recipient=student_user if False else students[0].user,
+                recipient=students[0].user,
                 notification_type=Notification.Type.ASSESSMENT,
                 title="New assessment available",
                 body="Your Computing assessment is ready to view.",
@@ -235,8 +243,9 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write("TEST ACCOUNTS")
         self.stdout.write("==============")
-        for email, password in self.PASSWORDS.items():
-            self.stdout.write(f"{email:<28} {password}")
+        self.stdout.write("All demo accounts use the password supplied with --password.")
+        for email in self.EMAILS:
+            self.stdout.write(email)
         self.stdout.write("")
         self.stdout.write(f"School: {school.name}")
         self.stdout.write(f"Class: {classroom.name}")
