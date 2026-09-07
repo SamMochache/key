@@ -20,6 +20,7 @@ urlpatterns = [
     path("api/", include("apps.identity.api_urls")),
     path("api/", include("apps.schools.api_urls")),
     path("api/", include("apps.students.api_urls")),
+    path("api/", include("apps.parents.api_urls")),
     path("api/", include("apps.teachers.api_urls")),
     path("api/", include("apps.academics.api_urls")),
     path("api/", include("apps.enrollment.api_urls")),
