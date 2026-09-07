@@ -5,7 +5,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { EmptyState } from '../components/ui/EmptyState';
-import { listAcademicYears, listClassrooms, listSchools, listTerms, type ApiAcademicYear, type ApiClassroom, type ApiSchool, type ApiTerm } from '../lib/api';
+import { listAcademicYears, listClassrooms, listSchools, listTerms, type ApiAcademicYear, type ApiClassroom, type ApiTerm, type School } from '../lib/api';
 import { archiveTimetable, createPeriod, createTimetable, createTimetableEntry, createTimetableVersion, deleteTimetableEntry, listPeriods, listTeacherSubjects, listTimetableEntries, listTimetables, publishTimetable, type ApiPeriod, type ApiTeacherSubject, type ApiTimetable, type ApiTimetableEntry, type WeekDay } from '../lib/timetableApi';
 
 const DAYS: Array<{ key: WeekDay; label: string }> = [
@@ -15,7 +15,7 @@ const DAYS: Array<{ key: WeekDay; label: string }> = [
 export function Timetables() {
   const [years, setYears] = useState<ApiAcademicYear[]>([]);
   const [terms, setTerms] = useState<ApiTerm[]>([]);
-  const [schools, setSchools] = useState<ApiSchool[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
   const [classrooms, setClassrooms] = useState<ApiClassroom[]>([]);
   const [periods, setPeriods] = useState<ApiPeriod[]>([]);
   const [timetables, setTimetables] = useState<ApiTimetable[]>([]);
@@ -84,7 +84,8 @@ export function Timetables() {
     if (!selectedYear || !selectedTerm || !selectedSchool) return;
     setSaving(true); setError('');
     try {
-      const created = await createTimetable({ school: selectedSchool, academic_year: selectedYear, term: selectedTerm, name: `Weekly Timetable ${new Date().getFullYear()}`, version: 1, status: 'DRAFT', effective_from: terms.find((item) => item.id === selectedTerm)?.start_date });
+      const selected = terms.find((item) => item.id === selectedTerm);
+      const created = await createTimetable({ school: selectedSchool, academic_year: selectedYear, term: selectedTerm, name: `Weekly Timetable ${new Date().getFullYear()}`, version: 1, status: 'DRAFT', effective_from: selected?.start_date });
       await refreshTimetables(created.id);
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to create timetable.'); } finally { setSaving(false); }
   };
