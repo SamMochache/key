@@ -40,16 +40,18 @@ class SubjectSerializer(serializers.ModelSerializer):
 
 
 class CambridgeStageSerializer(serializers.ModelSerializer):
+    programme_name = serializers.CharField(source="programme.name", read_only=True)
+
     class Meta:
         model = CambridgeStage
-        fields = ["id", "name", "code", "description", "display_order", "is_active", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        fields = ["id", "programme", "programme_name", "name", "stage_number", "display_order", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["id", "programme_name", "created_at", "updated_at"]
 
 
 class MontessoriLevelSerializer(serializers.ModelSerializer):
     class Meta:
         model = MontessoriLevel
-        fields = ["id", "name", "code", "description", "display_order", "is_active", "created_at", "updated_at"]
+        fields = ["id", "name", "code", "minimum_age", "maximum_age", "description", "display_order", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
@@ -67,11 +69,14 @@ class ClassroomSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source="school.name", read_only=True)
     academic_year_name = serializers.CharField(source="academic_year.name", read_only=True)
     term_number = serializers.IntegerField(source="term.term_number", read_only=True)
-    term_name = serializers.CharField(source="term.__str__", read_only=True)
+    term_name = serializers.SerializerMethodField()
     stage_name = serializers.CharField(source="cambridge_stage.name", read_only=True)
     montessori_level_name = serializers.CharField(source="montessori_level.name", read_only=True)
     student_count = serializers.IntegerField(read_only=True)
     subject_count = serializers.IntegerField(read_only=True)
+
+    def get_term_name(self, obj):
+        return str(obj.term)
 
     class Meta:
         model = Classroom
