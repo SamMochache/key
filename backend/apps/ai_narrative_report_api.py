@@ -9,8 +9,10 @@ from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
 
 from apps.academics.models import AcademicYear, Term
+from apps.ai_narrative_report_audit import record_ai_report_history
 from apps.assessments.models import (
     AINarrativeReport,
+    AINarrativeReportHistory,
     AssessmentSubmission,
     CompetencyEvaluation,
 )
@@ -311,7 +313,7 @@ class AINarrativeReportView(views.APIView):
             return JsonResponse({"detail": str(exc)}, status=503)
 
         _, _, model = _provider_settings()
-        report, _ = AINarrativeReport.objects.update_or_create(
+        report, created = AINarrativeReport.objects.update_or_create(
             student_id=student_id,
             academic_year_id=year.id,
             term_id=term.id,
@@ -327,6 +329,12 @@ class AINarrativeReportView(views.APIView):
                 "reviewed_at": None,
                 "published_at": None,
             },
+        )
+        record_ai_report_history(
+            report,
+            AINarrativeReportHistory.Action.GENERATED,
+            request.user,
+            metadata={"regenerated": not created},
         )
         return JsonResponse(_report_payload(report), status=201)
 
@@ -349,11 +357,23 @@ class AINarrativeReportView(views.APIView):
         if any(not isinstance(value, str) or not value.strip() for value in edited_content.values()):
             return JsonResponse({"detail": "All narrative sections must contain text."}, status=400)
 
+        previous_narrative = report.edited_content or report.generated_content
         report.edited_content = {key: value.strip() for key, value in edited_content.items()}
         report.status = AINarrativeReport.Status.REVIEWED
         report.reviewed_by = request.user
         report.reviewed_at = timezone.now()
         report.save(update_fields=["edited_content", "status", "reviewed_by", "reviewed_at", "updated_at"])
+        record_ai_report_history(
+            report,
+            AINarrativeReportHistory.Action.EDITED,
+            request.user,
+            metadata={"previous_narrative": previous_narrative},
+        )
+        record_ai_report_history(
+            report,
+            AINarrativeReportHistory.Action.REVIEWED,
+            request.user,
+        )
         return JsonResponse(_report_payload(report))
 
 
@@ -373,4 +393,9 @@ class AINarrativeReportPublishView(views.APIView):
         report.published_by = request.user
         report.published_at = timezone.now()
         report.save(update_fields=["status", "published_by", "published_at", "updated_at"])
+        record_ai_report_history(
+            report,
+            AINarrativeReportHistory.Action.PUBLISHED,
+            request.user,
+        )
         return JsonResponse(_report_payload(report))
