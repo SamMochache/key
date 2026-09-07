@@ -6,7 +6,8 @@ from rest_framework.test import APITestCase
 
 from apps.identity.models import User
 from apps.schools.models import School
-from apps.teachers.models import Department, Teacher
+from apps.teachers.models.department import Department
+from apps.teachers.models.teacher import Teacher
 
 from .models import Student
 
@@ -27,12 +28,8 @@ class StudentApiTests(APITestCase):
         )
         department = Department.objects.create(school=self.school_a, name="Primary", code="PRI")
         Teacher.objects.create(
-            user=self.teacher_user,
-            school=self.school_a,
-            employee_number="T-001",
-            employment_type="FULL_TIME",
-            employment_date=date(2025, 1, 1),
-            department=department,
+            user=self.teacher_user, school=self.school_a, employee_number="T-001",
+            employment_type="FULL_TIME", employment_date=date(2025, 1, 1), department=department,
         )
         self.student = Student.objects.create(
             user=self.student_user, school=self.school_a, admission_number="KEY-001",
@@ -92,8 +89,7 @@ class StudentApiTests(APITestCase):
                 "user": str(self.other_student_user.id), "school": str(self.school_a.id),
                 "admission_number": "KEY-001", "admission_date": "2026-02-01",
                 "date_of_birth": "2015-03-01", "gender": "male",
-            },
-            format="json",
+            }, format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("admission_number", response.data)
