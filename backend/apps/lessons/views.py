@@ -1,5 +1,6 @@
 from django.db.models import Q
 from rest_framework import permissions, viewsets
+from rest_framework.exceptions import PermissionDenied
 
 from .models import LessonSession
 from .serializers import LessonSessionSerializer
@@ -20,6 +21,8 @@ def is_admin(user):
 
 
 class LessonAccessPermission(permissions.BasePermission):
+    message = "You do not have permission to access lesson data."
+
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
@@ -30,8 +33,7 @@ class LessonAccessPermission(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if is_admin(request.user):
             return True
-        school_id = school_id_for(request.user)
-        return obj.classroom.school_id == school_id
+        return obj.timetable_entry.classroom.school_id == school_id_for(request.user)
 
 
 class LessonSessionViewSet(viewsets.ModelViewSet):
@@ -40,27 +42,37 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = LessonSession.objects.select_related(
-            "classroom", "subject", "teacher", "term", "classroom__school",
+            "teacher", "timetable_entry__classroom", "timetable_entry__period",
+            "timetable_entry__teacher_subject__teacher__user",
+            "timetable_entry__teacher_subject__subject",
+            "timetable_entry__timetable__term",
         )
         if not is_admin(self.request.user):
-            qs = qs.filter(classroom__school_id=school_id_for(self.request.user))
+            qs = qs.filter(timetable_entry__classroom__school_id=school_id_for(self.request.user))
             student = getattr(self.request.user, "student_profile", None)
             if student is not None:
-                qs = qs.filter(classroom__enrollments__student_id=student.id)
-        for param, field in (("classroom", "classroom_id"), ("subject", "subject_id"), ("teacher", "teacher_id"), ("term", "term_id"), ("status", "status"), ("lesson_date", "lesson_date")):
+                qs = qs.filter(timetable_entry__classroom__enrollments__student_id=student.id)
+        filters = {
+            "classroom": "timetable_entry__classroom_id",
+            "teacher": "teacher_id",
+            "term": "timetable_entry__timetable__term_id",
+            "status": "status",
+            "lesson_date": "lesson_date",
+        }
+        for param, field in filters.items():
             value = self.request.query_params.get(param)
             if value:
                 qs = qs.filter(**{field: value})
+        subject = self.request.query_params.get("subject")
+        if subject:
+            qs = qs.filter(timetable_entry__teacher_subject__subject_id=subject)
         search = self.request.query_params.get("search", "").strip()
         if search:
-            qs = qs.filter(Q(title__icontains=search) | Q(description__icontains=search))
-        return qs
+            qs = qs.filter(Q(remarks__icontains=search) | Q(timetable_entry__classroom__name__icontains=search))
+        return qs.distinct()
 
     def perform_create(self, serializer):
         teacher = serializer.validated_data["teacher"]
-        if not is_admin(self.request.user):
-            profile = getattr(self.request.user, "teacher_profile", None)
-            if profile is None or teacher.id != self.request.user.id:
-                from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("Teachers can only create lessons assigned to themselves.")
+        if not is_admin(self.request.user) and teacher.id != self.request.user.id:
+            raise PermissionDenied("Teachers can only create lessons assigned to themselves.")
         serializer.save()
