@@ -9,6 +9,7 @@ import { Students } from './pages/Students';
 import { StudentProfile } from './pages/StudentProfile';
 import { Teachers } from './pages/Teachers';
 import { Classes } from './pages/Classes';
+import { ClassProfile } from './pages/ClassProfile';
 import { Attendance } from './pages/Attendance';
 import { Academics } from './pages/Academics';
 import { Assessments } from './pages/Assessments';
@@ -39,6 +40,7 @@ export function App() {
                 <Route path="/students/:id" element={<StudentProfile />} />
                 <Route path="/teachers" element={<Teachers />} />
                 <Route path="/classes" element={<Classes />} />
+                <Route path="/classes/:id" element={<ClassProfile />} />
               </Route>
               <Route element={<ProtectedRoute roles={[...STAFF]} />}>
                 <Route path="/attendance" element={<Attendance />} />
