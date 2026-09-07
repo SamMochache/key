@@ -14,6 +14,7 @@ import { Attendance } from './pages/Attendance';
 import { Academics } from './pages/Academics';
 import { Lessons } from './pages/Lessons';
 import { Assessments } from './pages/Assessments';
+import { Evidence } from './pages/Evidence';
 import { AIReports } from './pages/AIReports';
 import { Portfolio } from './pages/Portfolio';
 import { Calendar } from './pages/Calendar';
@@ -53,6 +54,7 @@ export function App() {
               </Route>
               <Route element={<ProtectedRoute roles={[...LEARNING]} />}>
                 <Route path="/academics" element={<Academics />} />
+                <Route path="/evidence" element={<Evidence />} />
               </Route>
               <Route element={<ProtectedRoute roles={[...ALL]} />}>
                 <Route path="/portfolio" element={<Portfolio />} />
