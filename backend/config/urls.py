@@ -1,9 +1,7 @@
 """URL configuration for the Key API."""
-
 from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
-
 from apps.ai_narrative_published_api import PublishedAINarrativeReportPdfView, PublishedAINarrativeReportView
 from apps.ai_narrative_report_api import AINarrativeReportPublishView, AINarrativeReportView
 from apps.ai_narrative_report_history_api import AINarrativeReportHistoryView
@@ -14,36 +12,19 @@ from apps.competency_report_api import CompetencyOutcomesReportView
 from apps.consolidated_report_api import ConsolidatedReportView
 from apps.portfolio_report_api import PortfolioEvidenceReportView
 from apps.report_api import StudentReportView
-
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/", include("core.urls")),
-    path("api/", include("apps.identity.api_urls")),
-    path("api/", include("apps.schools.api_urls")),
-    path("api/", include("apps.students.api_urls")),
-    path("api/", include("apps.parents.api_urls")),
-    path("api/", include("apps.teachers.api_urls")),
-    path("api/", include("apps.academics.api_urls")),
-    path("api/", include("apps.enrollment.api_urls")),
-    path("api/", include("apps.timetables.api_urls")),
-    path("api/", include("apps.lessons.api_urls")),
-    path("api/", include("apps.attendance.api_urls")),
-    path("api/", include("apps.assessments.api_urls")),
-    path("api/", include("apps.portfolio.api_urls")),
-    path("api/", include("apps.communication.api_urls")),
+    path("api/", include("core.urls")), path("api/", include("apps.identity.api_urls")), path("api/", include("apps.schools.api_urls")),
+    path("api/", include("apps.students.api_urls")), path("api/", include("apps.parents.api_urls")), path("api/", include("apps.teachers.api_urls")),
+    path("api/", include("apps.academics.api_urls")), path("api/", include("apps.enrollment.api_urls")), path("api/", include("apps.timetables.api_urls")),
+    path("api/", include("apps.lessons.api_urls")), path("api/", include("apps.attendance.api_urls")), path("api/", include("apps.assessments.api_urls")),
+    path("api/", include("apps.portfolio.api_urls")), path("api/", include("apps.communication.api_urls")), path("api/", include("apps.notifications.api_urls")),
     path("api/", include("apps.analytics_urls")),
-    path("api/reports/student/", StudentReportView.as_view(), name="student-report"),
-    path("api/reports/class/", ClassReportView.as_view(), name="class-report"),
-    path("api/reports/attendance/", AttendanceReportView.as_view(), name="attendance-report"),
-    path("api/reports/assessments/", AssessmentResultsReportView.as_view(), name="assessment-results-report"),
-    path("api/reports/competencies/", CompetencyOutcomesReportView.as_view(), name="competency-outcomes-report"),
-    path("api/reports/portfolio/", PortfolioEvidenceReportView.as_view(), name="portfolio-evidence-report"),
-    path("api/reports/consolidated/", ConsolidatedReportView.as_view(), name="consolidated-report"),
-    path("api/reports/ai-narrative/", AINarrativeReportView.as_view(), name="ai-narrative-report"),
-    path("api/reports/ai-narrative/history/", AINarrativeReportHistoryView.as_view(), name="ai-narrative-report-history"),
-    path("api/reports/ai-narrative/published/", PublishedAINarrativeReportView.as_view(), name="published-ai-narrative-reports"),
-    path("api/reports/ai-narrative/<uuid:report_id>/publish/", AINarrativeReportPublishView.as_view(), name="ai-narrative-report-publish"),
-    path("api/reports/ai-narrative/<uuid:report_id>/pdf/", PublishedAINarrativeReportPdfView.as_view(), name="published-ai-narrative-report-pdf"),
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
-    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    path("api/reports/student/", StudentReportView.as_view(), name="student-report"), path("api/reports/class/", ClassReportView.as_view(), name="class-report"),
+    path("api/reports/attendance/", AttendanceReportView.as_view(), name="attendance-report"), path("api/reports/assessments/", AssessmentResultsReportView.as_view(), name="assessment-results-report"),
+    path("api/reports/competencies/", CompetencyOutcomesReportView.as_view(), name="competency-outcomes-report"), path("api/reports/portfolio/", PortfolioEvidenceReportView.as_view(), name="portfolio-evidence-report"),
+    path("api/reports/consolidated/", ConsolidatedReportView.as_view(), name="consolidated-report"), path("api/reports/ai-narrative/", AINarrativeReportView.as_view(), name="ai-narrative-report"),
+    path("api/reports/ai-narrative/history/", AINarrativeReportHistoryView.as_view(), name="ai-narrative-report-history"), path("api/reports/ai-narrative/published/", PublishedAINarrativeReportView.as_view(), name="published-ai-narrative-reports"),
+    path("api/reports/ai-narrative/<uuid:report_id>/publish/", AINarrativeReportPublishView.as_view(), name="ai-narrative-report-publish"), path("api/reports/ai-narrative/<uuid:report_id>/pdf/", PublishedAINarrativeReportPdfView.as_view(), name="published-ai-narrative-report-pdf"),
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"), path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
 ]
