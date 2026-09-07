@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Login } from './pages/Login';
 import { Students } from './pages/Students';
 import { StudentProfile } from './pages/StudentProfile';
+import { Teachers } from './pages/Teachers';
 import { Classes } from './pages/Classes';
 import { Attendance } from './pages/Attendance';
 import { Academics } from './pages/Academics';
@@ -30,13 +31,13 @@ export function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/forbidden" element={<Forbidden />} />
-
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/" element={<Dashboard />} />
               <Route element={<ProtectedRoute roles={[...PEOPLE]} />}>
                 <Route path="/students" element={<Students />} />
                 <Route path="/students/:id" element={<StudentProfile />} />
+                <Route path="/teachers" element={<Teachers />} />
                 <Route path="/classes" element={<Classes />} />
               </Route>
               <Route element={<ProtectedRoute roles={[...STAFF]} />}>
