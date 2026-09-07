@@ -5,6 +5,7 @@ from apps.identity.models import User
 
 from .models.department import Department
 from .models.teacher import Teacher
+from .models.teacher_subject import TeacherSubject
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
@@ -104,3 +105,19 @@ class TeacherSerializer(serializers.ModelSerializer):
         if "is_active" in user_data: user.is_active = user_data["is_active"]
         user.save()
         return super().update(instance, validated_data)
+
+
+class TeacherSubjectSerializer(serializers.ModelSerializer):
+    teacher_name = serializers.CharField(source="teacher.user.full_name", read_only=True)
+    subject_name = serializers.CharField(source="subject.name", read_only=True)
+    classroom_name = serializers.CharField(source="classroom.name", read_only=True)
+    academic_year_name = serializers.CharField(source="academic_year.name", read_only=True)
+    term_number = serializers.IntegerField(source="term.term_number", read_only=True)
+
+    class Meta:
+        model = TeacherSubject
+        fields = (
+            "id", "teacher", "teacher_name", "subject", "subject_name", "classroom", "classroom_name",
+            "academic_year", "academic_year_name", "term", "term_number", "role", "start_date", "end_date", "is_active",
+        )
+        read_only_fields = ("id", "teacher_name", "subject_name", "classroom_name", "academic_year_name", "term_number")
