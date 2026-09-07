@@ -92,7 +92,7 @@ ASGI_APPLICATION = "config.asgi.application"
 
 TEMPLATES = [
     {
-        "BACKEND": "django.core.handlers.wsgi.WSGIHandler",
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
