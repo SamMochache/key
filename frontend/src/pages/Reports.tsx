@@ -5,12 +5,13 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import { cn } from '../lib/utils';
 import { listAcademicYears, listClassrooms, listStudents, listTerms, type ApiAcademicYear, type ApiClassroom, type ApiStudent, type ApiTerm } from '../lib/api';
-import { downloadAttendanceReport, downloadClassReport, downloadStudentReport } from '../lib/reportsApi';
+import { downloadAssessmentResultsReport, downloadAttendanceReport, downloadClassReport, downloadStudentReport } from '../lib/reportsApi';
 import { useApp } from '../context/AppContext';
 
 const reports = [
   { title: 'Attendance Report', desc: 'Presence rates by class, month, and student.', icon: CalendarCheck, tone: 'brand', to: '#attendance-report' },
   { title: 'Class Report', desc: 'A printable academic snapshot of each learning community.', icon: School, tone: 'emerald', to: '#class-report' },
+  { title: 'Assessment Results Report', desc: 'Published assessment scores and performance summaries.', icon: BarChart3, tone: 'brand', to: '#assessment-results-report' },
   { title: 'Student Progress Report', desc: 'Published assessment, attendance, and competency outcomes.', icon: TrendingUp, tone: 'warm', to: '#student-report' },
   { title: 'AI Narrative Report', desc: 'Warm, growth-focused stories per child.', icon: Sparkles, tone: 'emerald', to: '/ai-reports' },
   { title: 'Performance Analytics', desc: 'Outcomes, trends, and comparisons.', icon: BarChart3, tone: 'brand', to: '/analytics' },
@@ -33,12 +34,15 @@ export function Reports() {
   const [classroom, setClassroom] = useState('');
   const [attendanceStudent, setAttendanceStudent] = useState('');
   const [attendanceClassroom, setAttendanceClassroom] = useState('');
+  const [assessmentStudent, setAssessmentStudent] = useState('');
+  const [assessmentClassroom, setAssessmentClassroom] = useState('');
   const [year, setYear] = useState('');
   const [term, setTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [generatingStudent, setGeneratingStudent] = useState(false);
   const [generatingClass, setGeneratingClass] = useState(false);
   const [generatingAttendance, setGeneratingAttendance] = useState(false);
+  const [generatingAssessment, setGeneratingAssessment] = useState(false);
   const [error, setError] = useState('');
   const [reportError, setReportError] = useState('');
 
@@ -83,6 +87,7 @@ export function Reports() {
         setClassrooms(data);
         setClassroom((current) => data.some((item) => item.id === current) ? current : '');
         setAttendanceClassroom((current) => data.some((item) => item.id === current) ? current : '');
+        setAssessmentClassroom((current) => data.some((item) => item.id === current) ? current : '');
       })
       .catch((err) => setReportError(err instanceof Error ? err.message : 'Unable to load classes.'));
   }, [year, role]);
@@ -125,6 +130,23 @@ export function Reports() {
       setReportError(err instanceof Error ? err.message : 'Unable to generate the attendance report.');
     } finally {
       setGeneratingAttendance(false);
+    }
+  };
+
+  const generateAssessmentReport = async () => {
+    setReportError('');
+    setGeneratingAssessment(true);
+    try {
+      await downloadAssessmentResultsReport({
+        classroom: assessmentClassroom || undefined,
+        student: assessmentStudent || undefined,
+        academicYear: year || undefined,
+        term: term || undefined,
+      });
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : 'Unable to generate the assessment results report.');
+    } finally {
+      setGeneratingAssessment(false);
     }
   };
 
@@ -188,7 +210,9 @@ export function Reports() {
 
       {role !== 'student' && <div id="class-report" className="mb-8"><Card className="p-5"><div className="flex flex-col gap-1 mb-5"><h2 className="font-display font-bold text-lg text-slate-800 dark:text-slate-100">Class Report</h2><p className="text-sm text-slate-500 dark:text-slate-400">Generate a printable class snapshot with learner performance and attendance.</p></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Class<select value={classroom} onChange={(event) => setClassroom(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Select class</option>{classrooms.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.code}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Academic Year<select value={year} onChange={(event) => setYear(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Select year</option>{years.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Term<select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Select term</option>{terms.map((item) => <option key={item.id} value={item.id}>Term {item.term_number}</option>)}</select></label></div><div className="mt-5 flex justify-end"><button type="button" disabled={loading || generatingClass || !classroom} onClick={generateClassReport} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"><DownloadIcon className="h-4 w-4" />{generatingClass ? 'Generating…' : 'Generate Class PDF'}</button></div></Card></div>}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{reports.filter((report) => report.title !== 'Student Progress Report' && report.title !== 'Class Report' && report.title !== 'Attendance Report').map((r) => { const Icon = r.icon; return <Card key={r.title} className="p-5 flex flex-col hover:-translate-y-0.5 transition-transform"><span className={cn('flex h-12 w-12 items-center justify-center rounded-2xl mb-4', tone[r.tone])}><Icon className="h-5 w-5" /></span><h3 className="font-display font-bold text-slate-800 dark:text-slate-100">{r.title}</h3><p className="text-sm text-slate-500 dark:text-slate-400 mt-1 flex-1">{r.desc}</p><div className="flex items-center gap-2 mt-4"><Link to={r.to} className="inline-flex items-center gap-1.5 text-sm font-bold text-brand-600 hover:gap-2 transition-all">Open <ArrowRightIcon className="h-4 w-4" /></Link></div></Card>; })}</div>
+      {role !== 'student' && <div id="assessment-results-report" className="mb-8"><Card className="p-5"><div className="flex flex-col gap-1 mb-5"><h2 className="font-display font-bold text-lg text-slate-800 dark:text-slate-100">Assessment Results Report</h2><p className="text-sm text-slate-500 dark:text-slate-400">Generate published assessment scores and performance summaries for a class or learner.</p></div><div className="grid grid-cols-1 md:grid-cols-4 gap-4"><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Class<select value={assessmentClassroom} onChange={(event) => { setAssessmentClassroom(event.target.value); setAssessmentStudent(''); }} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">All classes</option>{classrooms.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.code}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Student (optional)<select value={assessmentStudent} onChange={(event) => setAssessmentStudent(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">All students</option>{students.map((item) => <option key={item.id} value={item.id}>{item.full_name} — {item.admission_number}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Academic Year<select value={year} onChange={(event) => setYear(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Any available year</option>{years.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Term<select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Any term</option>{terms.map((item) => <option key={item.id} value={item.id}>Term {item.term_number}</option>)}</select></label></div>{(error || reportError) && <p className="mt-4 text-sm text-red-600 dark:text-red-400">{reportError || error}</p>}<div className="mt-5 flex justify-end"><button type="button" disabled={loading || generatingAssessment || (!assessmentClassroom && !assessmentStudent)} onClick={generateAssessmentReport} className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"><DownloadIcon className="h-4 w-4" />{generatingAssessment ? 'Generating…' : 'Generate Assessment PDF'}</button></div></Card></div>}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{reports.filter((report) => report.title !== 'Student Progress Report' && report.title !== 'Class Report' && report.title !== 'Attendance Report' && report.title !== 'Assessment Results Report').map((r) => { const Icon = r.icon; return <Card key={r.title} className="p-5 flex flex-col hover:-translate-y-0.5 transition-transform"><span className={cn('flex h-12 w-12 items-center justify-center rounded-2xl mb-4', tone[r.tone])}><Icon className="h-5 w-5" /></span><h3 className="font-display font-bold text-slate-800 dark:text-slate-100">{r.title}</h3><p className="text-sm text-slate-500 dark:text-slate-400 mt-1 flex-1">{r.desc}</p><div className="flex items-center gap-2 mt-4"><Link to={r.to} className="inline-flex items-center gap-1.5 text-sm font-bold text-brand-600 hover:gap-2 transition-all">Open <ArrowRightIcon className="h-4 w-4" /></Link></div></Card>; })}</div>
     </div>
   );
 }
