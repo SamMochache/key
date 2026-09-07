@@ -86,3 +86,17 @@ export async function downloadAssessmentResultsReport(params: {
   if (params.term) query.term = params.term;
   return downloadPdf('/reports/assessments/', query);
 }
+
+export async function downloadCompetencyOutcomesReport(params: {
+  classroom?: string;
+  student?: string;
+  academicYear?: string;
+  term?: string;
+}) {
+  const query: Record<string, string> = {};
+  if (params.classroom) query.classroom = params.classroom;
+  if (params.student) query.student = params.student;
+  if (params.academicYear) query.academic_year = params.academicYear;
+  if (params.term) query.term = params.term;
+  return downloadPdf('/reports/competencies/', query);
+}
