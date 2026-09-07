@@ -11,7 +11,7 @@ from apps.academics.models import Classroom
 from apps.assessments.models import CompetencyEvaluation
 from apps.assessments.permissions import UserRole, get_user_role, get_user_school
 from apps.enrollment.models import Enrollment
-from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles, summary_table
+from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles
 from core.constants.competency import CompetencyLevel
 
 
@@ -161,10 +161,7 @@ class CompetencyOutcomesReportView(views.APIView):
 
         story.extend([
             Paragraph(f"Level observations: {total_levels}", styles["heading"]),
-            summary_table(
-                ["Competency", "Proficient+", "Average Level", "Observations"] + [],
-                [85 * mm, 35 * mm, 38 * mm, 35 * mm],
-            ) if False else data_table(
+            data_table(
                 [["Competency", "Proficient+", "Average Level", "Observations"]] + summary,
                 [85 * mm, 35 * mm, 38 * mm, 35 * mm],
                 center_from=1,
