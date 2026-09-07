@@ -53,6 +53,24 @@ export interface DashboardSummary {
   upcoming_assessments: number;
 }
 
+export interface School {
+  id: string;
+  name: string;
+  short_name: string;
+  email: string;
+  phone_number: string;
+  address: string;
+  city: string;
+  country: string;
+  timezone: string;
+  logo: string | null;
+  is_active: boolean;
+  student_count: number;
+  teacher_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 interface Paginated<T> {
   count: number;
   next: string | null;
@@ -156,6 +174,15 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
 
 export async function getCurrentUser() {
   return request<CurrentUser>('/auth/me/');
+}
+
+export async function getMySchool() {
+  return request<School>('/schools/me/');
+}
+
+export async function listSchools() {
+  const data = await request<Paginated<School> | School[]>('/schools/');
+  return Array.isArray(data) ? data : data.results;
 }
 
 export async function listAssessments() {
