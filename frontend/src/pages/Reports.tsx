@@ -5,7 +5,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import { cn } from '../lib/utils';
 import { listAcademicYears, listClassrooms, listStudents, listTerms, type ApiAcademicYear, type ApiClassroom, type ApiStudent, type ApiTerm } from '../lib/api';
-import { downloadAssessmentResultsReport, downloadAttendanceReport, downloadClassReport, downloadCompetencyOutcomesReport, downloadPortfolioEvidenceReport, downloadStudentReport } from '../lib/reportsApi';
+import { downloadAssessmentResultsReport, downloadAttendanceReport, downloadClassReport, downloadCompetencyOutcomesReport, downloadConsolidatedReport, downloadPortfolioEvidenceReport, downloadStudentReport } from '../lib/reportsApi';
 import { useApp } from '../context/AppContext';
 
 const reports = [
@@ -14,6 +14,7 @@ const reports = [
   { title: 'Assessment Results Report', desc: 'Published assessment scores and performance summaries.', icon: BarChart3, tone: 'brand', to: '#assessment-results-report' },
   { title: 'Competency Outcomes Report', desc: 'Mastery levels and competency outcomes by learner and class.', icon: TrendingUp, tone: 'emerald', to: '#competency-outcomes-report' },
   { title: 'Portfolio & Evidence Report', desc: 'Portfolio items, artifacts, assessments, and lessons represented in learner work.', icon: FolderOpen, tone: 'warm', to: '#portfolio-evidence-report' },
+  { title: 'Consolidated Academic Report', desc: 'One term-level view of academic performance, attendance, competencies, and learner evidence.', icon: BarChart3, tone: 'brand', to: '#consolidated-report' },
   { title: 'Student Progress Report', desc: 'Published assessment, attendance, and competency outcomes.', icon: TrendingUp, tone: 'warm', to: '#student-report' },
   { title: 'AI Narrative Report', desc: 'Warm, growth-focused stories per child.', icon: Sparkles, tone: 'emerald', to: '/ai-reports' },
   { title: 'Performance Analytics', desc: 'Outcomes, trends, and comparisons.', icon: BarChart3, tone: 'brand', to: '/analytics' },
@@ -42,6 +43,8 @@ export function Reports() {
   const [competencyClassroom, setCompetencyClassroom] = useState('');
   const [portfolioStudent, setPortfolioStudent] = useState('');
   const [portfolioClassroom, setPortfolioClassroom] = useState('');
+  const [consolidatedStudent, setConsolidatedStudent] = useState('');
+  const [consolidatedClassroom, setConsolidatedClassroom] = useState('');
   const [year, setYear] = useState('');
   const [term, setTerm] = useState('');
   const [loading, setLoading] = useState(true);
@@ -51,19 +54,15 @@ export function Reports() {
   const [generatingAssessment, setGeneratingAssessment] = useState(false);
   const [generatingCompetency, setGeneratingCompetency] = useState(false);
   const [generatingPortfolio, setGeneratingPortfolio] = useState(false);
+  const [generatingConsolidated, setGeneratingConsolidated] = useState(false);
   const [error, setError] = useState('');
   const [reportError, setReportError] = useState('');
 
   useEffect(() => {
-    if (role === 'student') {
-      setLoading(false);
-      return;
-    }
+    if (role === 'student') { setLoading(false); return; }
     Promise.all([listStudents({ isActive: true }), listClassrooms({ active: true }), listAcademicYears()])
       .then(([studentData, classroomData, yearData]) => {
-        setStudents(studentData);
-        setClassrooms(classroomData);
-        setYears(yearData);
+        setStudents(studentData); setClassrooms(classroomData); setYears(yearData);
         if (yearData.length) setYear(yearData.find((item) => item.is_current)?.id || yearData[0].id);
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Unable to load report options.'))
@@ -71,16 +70,9 @@ export function Reports() {
   }, [role]);
 
   useEffect(() => {
-    if (!year) {
-      setTerms([]);
-      setTerm('');
-      return;
-    }
+    if (!year) { setTerms([]); setTerm(''); return; }
     listTerms({ academicYear: year })
-      .then((data) => {
-        setTerms(data);
-        setTerm((current) => data.some((item) => item.id === current) ? current : (data.find((item) => item.is_current)?.id || data[0]?.id || ''));
-      })
+      .then((data) => { setTerms(data); setTerm((current) => data.some((item) => item.id === current) ? current : (data.find((item) => item.is_current)?.id || data[0]?.id || '')); })
       .catch((err) => setReportError(err instanceof Error ? err.message : 'Unable to load terms.'));
   }, [year]);
 
@@ -94,65 +86,30 @@ export function Reports() {
         setAssessmentClassroom((current) => data.some((item) => item.id === current) ? current : '');
         setCompetencyClassroom((current) => data.some((item) => item.id === current) ? current : '');
         setPortfolioClassroom((current) => data.some((item) => item.id === current) ? current : '');
+        setConsolidatedClassroom((current) => data.some((item) => item.id === current) ? current : '');
       })
       .catch((err) => setReportError(err instanceof Error ? err.message : 'Unable to load classes.'));
   }, [year, role]);
 
-  const generateStudentReport = async () => {
-    setReportError(''); setGeneratingStudent(true);
-    try { await downloadStudentReport({ student: role === 'student' ? '' : student, academicYear: year || undefined, term: term || undefined }); }
-    catch (err) { setReportError(err instanceof Error ? err.message : 'Unable to generate the report.'); }
-    finally { setGeneratingStudent(false); }
+  const run = async (setter: (value: boolean) => void, action: () => Promise<void>, message: string) => {
+    setReportError(''); setter(true);
+    try { await action(); } catch (err) { setReportError(err instanceof Error ? err.message : message); }
+    finally { setter(false); }
   };
-  const generateClassReport = async () => {
-    setReportError(''); setGeneratingClass(true);
-    try { await downloadClassReport({ classroom, academicYear: year || undefined, term: term || undefined }); }
-    catch (err) { setReportError(err instanceof Error ? err.message : 'Unable to generate the class report.'); }
-    finally { setGeneratingClass(false); }
-  };
-  const generateAttendanceReport = async () => {
-    setReportError(''); setGeneratingAttendance(true);
-    try { await downloadAttendanceReport({ classroom: attendanceClassroom || undefined, student: attendanceStudent || undefined, academicYear: year || undefined, term: term || undefined }); }
-    catch (err) { setReportError(err instanceof Error ? err.message : 'Unable to generate the attendance report.'); }
-    finally { setGeneratingAttendance(false); }
-  };
-  const generateAssessmentReport = async () => {
-    setReportError(''); setGeneratingAssessment(true);
-    try { await downloadAssessmentResultsReport({ classroom: assessmentClassroom || undefined, student: assessmentStudent || undefined, academicYear: year || undefined, term: term || undefined }); }
-    catch (err) { setReportError(err instanceof Error ? err.message : 'Unable to generate the assessment results report.'); }
-    finally { setGeneratingAssessment(false); }
-  };
-  const generateCompetencyReport = async () => {
-    setReportError(''); setGeneratingCompetency(true);
-    try { await downloadCompetencyOutcomesReport({ classroom: competencyClassroom || undefined, student: competencyStudent || undefined, academicYear: year || undefined, term: term || undefined }); }
-    catch (err) { setReportError(err instanceof Error ? err.message : 'Unable to generate the competency outcomes report.'); }
-    finally { setGeneratingCompetency(false); }
-  };
-  const generatePortfolioReport = async () => {
-    setReportError(''); setGeneratingPortfolio(true);
-    try { await downloadPortfolioEvidenceReport({ classroom: portfolioClassroom || undefined, student: portfolioStudent || undefined, academicYear: year || undefined, term: term || undefined }); }
-    catch (err) { setReportError(err instanceof Error ? err.message : 'Unable to generate the portfolio evidence report.'); }
-    finally { setGeneratingPortfolio(false); }
-  };
+  const generateStudentReport = () => run(setGeneratingStudent, () => downloadStudentReport({ student: role === 'student' ? '' : student, academicYear: year || undefined, term: term || undefined }), 'Unable to generate the report.');
+  const generateClassReport = () => run(setGeneratingClass, () => downloadClassReport({ classroom, academicYear: year || undefined, term: term || undefined }), 'Unable to generate the class report.');
+  const generateAttendanceReport = () => run(setGeneratingAttendance, () => downloadAttendanceReport({ classroom: attendanceClassroom || undefined, student: attendanceStudent || undefined, academicYear: year || undefined, term: term || undefined }), 'Unable to generate the attendance report.');
+  const generateAssessmentReport = () => run(setGeneratingAssessment, () => downloadAssessmentResultsReport({ classroom: assessmentClassroom || undefined, student: assessmentStudent || undefined, academicYear: year || undefined, term: term || undefined }), 'Unable to generate the assessment results report.');
+  const generateCompetencyReport = () => run(setGeneratingCompetency, () => downloadCompetencyOutcomesReport({ classroom: competencyClassroom || undefined, student: competencyStudent || undefined, academicYear: year || undefined, term: term || undefined }), 'Unable to generate the competency outcomes report.');
+  const generatePortfolioReport = () => run(setGeneratingPortfolio, () => downloadPortfolioEvidenceReport({ classroom: portfolioClassroom || undefined, student: portfolioStudent || undefined, academicYear: year || undefined, term: term || undefined }), 'Unable to generate the portfolio evidence report.');
+  const generateConsolidatedReport = () => run(setGeneratingConsolidated, () => downloadConsolidatedReport({ classroom: consolidatedClassroom || undefined, student: consolidatedStudent || undefined, academicYear: year, term }), 'Unable to generate the consolidated report.');
 
-  const sharedFilters = (prefix: string, selectedClass: string, setSelectedClass: (value: string) => void, selectedStudent: string, setSelectedStudent: (value: string) => void) => (
+  const sharedFilters = (selectedClass: string, setSelectedClass: (value: string) => void, selectedStudent: string, setSelectedStudent: (value: string) => void) => (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Class
-        <select value={selectedClass} onChange={(event) => { setSelectedClass(event.target.value); setSelectedStudent(''); }} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-          <option value="">All classes</option>{classrooms.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.code}</option>)}
-        </select>
-      </label>
-      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Student (optional)
-        <select value={selectedStudent} onChange={(event) => setSelectedStudent(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-          <option value="">All students</option>{students.map((item) => <option key={item.id} value={item.id}>{item.full_name} — {item.admission_number}</option>)}
-        </select>
-      </label>
-      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Academic Year
-        <select value={year} onChange={(event) => setYear(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Any available year</option>{years.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-      </label>
-      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Term
-        <select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Any term</option>{terms.map((item) => <option key={item.id} value={item.id}>Term {item.term_number}</option>)}</select>
-      </label>
+      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Class<select value={selectedClass} onChange={(event) => { setSelectedClass(event.target.value); setSelectedStudent(''); }} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">All classes</option>{classrooms.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.code}</option>)}</select></label>
+      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Student (optional)<select value={selectedStudent} onChange={(event) => setSelectedStudent(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">All students</option>{students.map((item) => <option key={item.id} value={item.id}>{item.full_name} — {item.admission_number}</option>)}</select></label>
+      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Academic Year<select value={year} onChange={(event) => setYear(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Any available year</option>{years.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Term<select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Any term</option>{terms.map((item) => <option key={item.id} value={item.id}>Term {item.term_number}</option>)}</select></label>
     </div>
   );
 
@@ -162,12 +119,13 @@ export function Reports() {
 
   return <div>
     <PageHeader title="Reports" description="Generate beautiful, printable reports for families, staff, and leadership." />
-    {role !== 'student' && reportCard('attendance-report', 'Attendance Summary Report', 'Generate attendance totals and rates for a class or individual learner.', sharedFilters('attendance', attendanceClassroom, setAttendanceClassroom, attendanceStudent, setAttendanceStudent), !attendanceClassroom && !attendanceStudent, generatingAttendance, generateAttendanceReport, 'Generate Attendance PDF')}
-    {reportCard('student-report', 'Student Progress Report', 'Generate a PDF from published academic records for a selected term.', role === 'student' ? <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 px-4 py-3 text-sm text-slate-600 dark:text-slate-300">Your report is generated from your own published records. Use the button below to download it.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-4"><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Student<select value={student} onChange={(event) => setStudent(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Select student</option>{students.map((item) => <option key={item.id} value={item.id}>{item.full_name} — {item.admission_number}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Academic Year<select value={year} onChange={(event) => setYear(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Any available year</option>{years.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Term<select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:bg-slate-900 dark:text-slate-100"><option value="">Any term</option>{terms.map((item) => <option key={item.id} value={item.id}>Term {item.term_number}</option>)}</select></label></div>, role !== 'student' && !student, generatingStudent, generateStudentReport, 'Generate PDF')}
-    {role !== 'student' && reportCard('class-report', 'Class Report', 'Generate a printable class snapshot with learner performance and attendance.', <div className="grid grid-cols-1 md:grid-cols-3 gap-4"><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Class<select value={classroom} onChange={(event) => setClassroom(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Select class</option>{classrooms.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.code}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Academic Year<select value={year} onChange={(event) => setYear(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:bg-slate-900 dark:text-slate-100"><option value="">Select year</option>{years.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Term<select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:bg-slate-900 dark:text-slate-100"><option value="">Select term</option>{terms.map((item) => <option key={item.id} value={item.id}>Term {item.term_number}</option>)}</select></label></div>, !classroom, generatingClass, generateClassReport, 'Generate Class PDF')}
-    {role !== 'student' && reportCard('assessment-results-report', 'Assessment Results Report', 'Generate published assessment scores and performance summaries for a class or learner.', sharedFilters('assessment', assessmentClassroom, setAssessmentClassroom, assessmentStudent, setAssessmentStudent), !assessmentClassroom && !assessmentStudent, generatingAssessment, generateAssessmentReport, 'Generate Assessment PDF')}
-    {role !== 'student' && reportCard('competency-outcomes-report', 'Competency Outcomes Report', 'Generate published competency mastery levels for a class or individual learner.', sharedFilters('competency', competencyClassroom, setCompetencyClassroom, competencyStudent, setCompetencyStudent), !competencyClassroom && !competencyStudent, generatingCompetency, generateCompetencyReport, 'Generate Competency PDF')}
-    {role !== 'student' && reportCard('portfolio-evidence-report', 'Portfolio & Evidence Summary', 'Generate portfolio items, attached artifacts, and learning references for a class or learner.', sharedFilters('portfolio', portfolioClassroom, setPortfolioClassroom, portfolioStudent, setPortfolioStudent), !portfolioClassroom && !portfolioStudent, generatingPortfolio, generatePortfolioReport, 'Generate Portfolio PDF')}
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{reports.filter((report) => !['Student Progress Report','Class Report','Attendance Report','Assessment Results Report','Competency Outcomes Report','Portfolio & Evidence Report'].includes(report.title)).map((r) => { const Icon = r.icon; return <Card key={r.title} className="p-5 flex flex-col hover:-translate-y-0.5 transition-transform"><span className={cn('flex h-12 w-12 items-center justify-center rounded-2xl mb-4', tone[r.tone])}><Icon className="h-5 w-5" /></span><h3 className="font-display font-bold text-slate-800 dark:text-slate-100">{r.title}</h3><p className="text-sm text-slate-500 dark:text-slate-400 mt-1 flex-1">{r.desc}</p><div className="flex items-center gap-2 mt-4"><Link to={r.to} className="inline-flex items-center gap-1.5 text-sm font-bold text-brand-600 hover:gap-2 transition-all">Open <ArrowRightIcon className="h-4 w-4" /></Link></div></Card>; })}</div>
+    {role !== 'student' && reportCard('attendance-report', 'Attendance Summary Report', 'Generate attendance totals and rates for a class or individual learner.', sharedFilters(attendanceClassroom, setAttendanceClassroom, attendanceStudent, setAttendanceStudent), !attendanceClassroom && !attendanceStudent, generatingAttendance, generateAttendanceReport, 'Generate Attendance PDF')}
+    {reportCard('student-report', 'Student Progress Report', 'Generate a PDF from published academic records for a selected term.', role === 'student' ? <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 px-4 py-3 text-sm text-slate-600 dark:text-slate-300">Your report is generated from your own published records. Use the button below to download it.</div> : <div className="grid grid-cols-1 md:grid-cols-3 gap-4"><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Student<select value={student} onChange={(event) => setStudent(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Select student</option>{students.map((item) => <option key={item.id} value={item.id}>{item.full_name} — {item.admission_number}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Academic Year<select value={year} onChange={(event) => setYear(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Any available year</option>{years.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Term<select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Any term</option>{terms.map((item) => <option key={item.id} value={item.id}>Term {item.term_number}</option>)}</select></label></div>, role !== 'student' && !student, generatingStudent, generateStudentReport, 'Generate PDF')}
+    {role !== 'student' && reportCard('class-report', 'Class Report', 'Generate a printable class snapshot with learner performance and attendance.', <div className="grid grid-cols-1 md:grid-cols-3 gap-4"><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Class<select value={classroom} onChange={(event) => setClassroom(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Select class</option>{classrooms.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.code}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Academic Year<select value={year} onChange={(event) => setYear(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Select year</option>{years.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Term<select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><option value="">Select term</option>{terms.map((item) => <option key={item.id} value={item.id}>Term {item.term_number}</option>)}</select></label></div>, !classroom, generatingClass, generateClassReport, 'Generate Class PDF')}
+    {role !== 'student' && reportCard('assessment-results-report', 'Assessment Results Report', 'Generate published assessment scores and performance summaries for a class or learner.', sharedFilters(assessmentClassroom, setAssessmentClassroom, assessmentStudent, setAssessmentStudent), !assessmentClassroom && !assessmentStudent, generatingAssessment, generateAssessmentReport, 'Generate Assessment PDF')}
+    {role !== 'student' && reportCard('competency-outcomes-report', 'Competency Outcomes Report', 'Generate published competency mastery levels for a class or individual learner.', sharedFilters(competencyClassroom, setCompetencyClassroom, competencyStudent, setCompetencyStudent), !competencyClassroom && !competencyStudent, generatingCompetency, generateCompetencyReport, 'Generate Competency PDF')}
+    {role !== 'student' && reportCard('portfolio-evidence-report', 'Portfolio & Evidence Summary', 'Generate portfolio items, attached artifacts, and learning references for a class or learner.', sharedFilters(portfolioClassroom, setPortfolioClassroom, portfolioStudent, setPortfolioStudent), !portfolioClassroom && !portfolioStudent, generatingPortfolio, generatePortfolioReport, 'Generate Portfolio PDF')}
+    {role !== 'student' && reportCard('consolidated-report', 'Consolidated Academic Report', 'Generate one term-level PDF combining assessment, attendance, competency, portfolio, and evidence metrics.', sharedFilters(consolidatedClassroom, setConsolidatedClassroom, consolidatedStudent, setConsolidatedStudent), !year || !term, generatingConsolidated, generateConsolidatedReport, 'Generate Consolidated PDF')}
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{reports.filter((report) => !['Student Progress Report','Class Report','Attendance Report','Assessment Results Report','Competency Outcomes Report','Portfolio & Evidence Report','Consolidated Academic Report'].includes(report.title)).map((r) => { const Icon = r.icon; return <Card key={r.title} className="p-5 flex flex-col hover:-translate-y-0.5 transition-transform"><span className={cn('flex h-12 w-12 items-center justify-center rounded-2xl mb-4', tone[r.tone])}><Icon className="h-5 w-5" /></span><h3 className="font-display font-bold text-slate-800 dark:text-slate-100">{r.title}</h3><p className="text-sm text-slate-500 dark:text-slate-400 mt-1 flex-1">{r.desc}</p><div className="flex items-center gap-2 mt-4"><Link to={r.to} className="inline-flex items-center gap-1.5 text-sm font-bold text-brand-600 hover:gap-2 transition-all">Open <ArrowRightIcon className="h-4 w-4" /></Link></div></Card>; })}</div>
   </div>;
 }
