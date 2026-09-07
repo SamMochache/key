@@ -1,4 +1,3 @@
-from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
@@ -6,7 +5,6 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.assessments.permissions import UserRole, get_user_role, get_user_school
-from apps.enrollment.models import Enrollment
 
 from .models import Artifact, Portfolio, PortfolioItem
 from .serializers import ArtifactSerializer, PortfolioItemSerializer, PortfolioSerializer
@@ -43,6 +41,11 @@ class PortfolioViewSet(PortfolioAccessMixin, viewsets.ModelViewSet):
         role = get_user_role(self.request.user)
         if role not in {UserRole.ADMIN, UserRole.TEACHER}:
             raise PermissionDenied("Only staff can create portfolios for learners.")
+        student = serializer.validated_data["student"]
+        if role == UserRole.TEACHER:
+            school = get_user_school(self.request.user)
+            if school is None or student.school_id != school.id:
+                raise PermissionDenied("You cannot create a portfolio for another institution.")
         serializer.save()
 
     @action(detail=False, methods=["get"])
@@ -74,10 +77,16 @@ class PortfolioItemViewSet(PortfolioAccessMixin, viewsets.ModelViewSet):
             qs = qs.filter(Q(title__icontains=search) | Q(description__icontains=search))
         return qs
 
+    def _check_portfolio(self, portfolio_id):
+        if not self.scoped_portfolios().filter(id=portfolio_id).exists():
+            raise PermissionDenied("You cannot manage this portfolio.")
+
     def perform_create(self, serializer):
-        role = get_user_role(self.request.user)
-        if role not in {UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT}:
-            raise PermissionDenied("You do not have permission to add portfolio items.")
+        self._check_portfolio(serializer.validated_data["portfolio"].id)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._check_portfolio(serializer.validated_data.get("portfolio", serializer.instance.portfolio).id)
         serializer.save()
 
 
@@ -89,12 +98,20 @@ class ArtifactViewSet(PortfolioAccessMixin, viewsets.ModelViewSet):
             portfolio_item__portfolio__in=self.scoped_portfolios()
         ).select_related("portfolio_item__portfolio__student__user")
 
-    def perform_create(self, serializer):
-        item_id = self.request.data.get("portfolio_item")
+    def _check_item(self, item_id):
         try:
             item = PortfolioItem.objects.get(id=item_id)
         except (PortfolioItem.DoesNotExist, ValueError):
             raise PermissionDenied("Portfolio item not found.")
         if not self.scoped_portfolios().filter(id=item.portfolio_id).exists():
-            raise PermissionDenied("You cannot add an artifact to this portfolio.")
+            raise PermissionDenied("You cannot manage an artifact for this portfolio.")
+        return item
+
+    def perform_create(self, serializer):
+        self._check_item(self.request.data.get("portfolio_item"))
+        serializer.save()
+
+    def perform_update(self, serializer):
+        item = serializer.instance.portfolio_item
+        self._check_item(item.id)
         serializer.save()
