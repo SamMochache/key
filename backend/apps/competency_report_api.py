@@ -2,12 +2,8 @@ from collections import defaultdict
 from io import BytesIO
 
 from django.http import FileResponse, JsonResponse
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Paragraph, Spacer
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
 
@@ -15,6 +11,7 @@ from apps.academics.models import Classroom
 from apps.assessments.models import CompetencyEvaluation
 from apps.assessments.permissions import UserRole, get_user_role, get_user_school
 from apps.enrollment.models import Enrollment
+from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles, summary_table
 from core.constants.competency import CompetencyLevel
 
 
@@ -58,7 +55,9 @@ class CompetencyOutcomesReportView(views.APIView):
             if term_id and str(classroom.term_id) != term_id:
                 return JsonResponse({"detail": "The classroom does not belong to the selected term."}, status=400)
 
-        enrollments = Enrollment.objects.select_related("student", "classroom", "classroom__school", "classroom__academic_year", "classroom__term")
+        enrollments = Enrollment.objects.select_related(
+            "student", "classroom", "classroom__school", "classroom__academic_year", "classroom__term"
+        )
         if school is not None:
             enrollments = enrollments.filter(classroom__school=school)
         if classroom is not None:
@@ -137,81 +136,58 @@ class CompetencyOutcomesReportView(views.APIView):
             for level in LEVEL_ORDER
         ]
 
-        return self._build_pdf(classroom, competency_list, summary, distribution_rows, rows, total_levels)
+        return self._build_pdf(classroom, school, competency_list, summary, distribution_rows, rows, total_levels)
 
-    def _build_pdf(self, classroom, competencies, summary, distribution_rows, rows, total_levels):
+    def _build_pdf(self, classroom, school, competencies, summary, distribution_rows, rows, total_levels):
         buffer = BytesIO()
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=landscape(A4),
-            rightMargin=14 * mm,
-            leftMargin=14 * mm,
-            topMargin=14 * mm,
-            bottomMargin=14 * mm,
-            title="Competency Outcomes Report",
-            author="KEY",
-        )
-        styles = getSampleStyleSheet()
-        title = ParagraphStyle("CompetencyReportTitle", parent=styles["Title"], alignment=TA_CENTER, fontSize=18, leading=22, spaceAfter=4 * mm)
-        heading = ParagraphStyle("CompetencyReportHeading", parent=styles["Heading2"], fontSize=11, leading=14, spaceBefore=4 * mm, spaceAfter=2 * mm)
-        small = ParagraphStyle("CompetencyReportSmall", parent=styles["BodyText"], fontSize=8, leading=10)
-
-        school_name = classroom.school.name if classroom else "Institution"
-        story = [
-            Paragraph(school_name, title),
-            Paragraph("Competency Outcomes Report", styles["Heading1"]),
-            Spacer(1, 2 * mm),
-        ]
+        doc = build_document(buffer, landscape_mode=True, title="Competency Outcomes Report")
+        styles = report_styles()
+        story = []
+        school_name = school.name if school else (classroom.school.name if classroom else "KEY")
+        subtitle = "Institution-wide scope"
         if classroom:
-            story.append(Table([
-                ["Class", classroom.name, "Code", classroom.code, "Stage", classroom.cambridge_stage.name],
-                ["Academic Year", classroom.academic_year.name, "Term", f"Term {classroom.term.term_number}", "Competencies", str(len(competencies))],
-            ], colWidths=[25 * mm, 55 * mm, 22 * mm, 45 * mm, 22 * mm, 55 * mm], style=TableStyle([
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
-                ("FONTNAME", (4, 0), (4, -1), "Helvetica-Bold"),
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f1f5f9")),
-                ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#f1f5f9")),
-                ("BACKGROUND", (4, 0), (4, -1), colors.HexColor("#f1f5f9")),
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
-                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ])), Spacer(1, 4 * mm))
+            subtitle = f"{classroom.name} • {classroom.academic_year.name} • Term {classroom.term.term_number}"
+        report_header(story, school_name, "Competency Outcomes Report", subtitle)
 
-        story.append(Paragraph(f"Level observations: {total_levels}", heading))
-        summary_table = Table([["Competency", "Proficient+", "Average Level", "Observations"]] + summary, colWidths=[85 * mm, 35 * mm, 38 * mm, 35 * mm], repeatRows=1)
-        summary_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ]))
-        story.extend([summary_table, Paragraph("Level Distribution", heading)])
-        distribution_table = Table([["Level", "Share", "Count"]] + distribution_rows, colWidths=[45 * mm, 35 * mm, 35 * mm], repeatRows=1)
-        distribution_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        story.extend([distribution_table, Paragraph("Student Outcomes", heading)])
+        if classroom:
+            stage = classroom.cambridge_stage.name if classroom.cambridge_stage else "—"
+            story.extend([
+                info_table([
+                    ["Class", classroom.name, "Code", classroom.code, "Stage", stage],
+                    ["Academic Year", classroom.academic_year.name, "Term", f"Term {classroom.term.term_number}", "Competencies", str(len(competencies))],
+                ], [25 * mm, 55 * mm, 22 * mm, 45 * mm, 22 * mm, 55 * mm]),
+                Spacer(1, 4 * mm),
+            ])
 
-        outcome_table = Table([["Admission", "Student", "Competency", "Level"]] + rows, colWidths=[32 * mm, 70 * mm, 90 * mm, 40 * mm], repeatRows=1)
-        outcome_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ]))
-        story.extend([outcome_table, Spacer(1, 6 * mm), Paragraph("This report uses published competency evaluations linked to published assessment results for the selected enrollment scope.", small)])
-        doc.build(story)
+        story.extend([
+            Paragraph(f"Level observations: {total_levels}", styles["heading"]),
+            summary_table(
+                ["Competency", "Proficient+", "Average Level", "Observations"] + [],
+                [85 * mm, 35 * mm, 38 * mm, 35 * mm],
+            ) if False else data_table(
+                [["Competency", "Proficient+", "Average Level", "Observations"]] + summary,
+                [85 * mm, 35 * mm, 38 * mm, 35 * mm],
+                center_from=1,
+            ),
+            Paragraph("Level Distribution", styles["heading"]),
+            data_table(
+                [["Level", "Share", "Count"]] + distribution_rows,
+                [45 * mm, 35 * mm, 35 * mm],
+                center_from=1,
+            ),
+            Paragraph("Student Outcomes", styles["heading"]),
+            data_table(
+                [["Admission", "Student", "Competency", "Level"]] + rows,
+                [32 * mm, 70 * mm, 90 * mm, 40 * mm],
+                center_from=3,
+            ),
+            Spacer(1, 6 * mm),
+            Paragraph(
+                "This report uses published competency evaluations linked to published assessment results for the selected enrollment scope.",
+                styles["small"],
+            ),
+        ])
+        doc.build(story, onFirstPage=footer, onLaterPages=footer)
         buffer.seek(0)
         filename = f"competency-outcomes-{classroom.code if classroom else 'report'}.pdf"
         return FileResponse(buffer, as_attachment=True, filename=filename, content_type="application/pdf")
