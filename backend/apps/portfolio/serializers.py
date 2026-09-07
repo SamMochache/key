@@ -58,7 +58,9 @@ class PortfolioSerializer(serializers.ModelSerializer):
     def validate_student(self, student):
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        if getattr(request, "portfolio_role", None) == "student" and getattr(user, "student_profile", None).id != student.id:
+        role = getattr(request, "portfolio_role", None)
+        student_profile = getattr(user, "student_profile", None)
+        if role == "student" and (student_profile is None or student_profile.id != student.id):
             raise serializers.ValidationError("You can only manage your own portfolio.")
         return student
 
