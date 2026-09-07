@@ -11,12 +11,19 @@ import {
   ActivityFeed,
   MiniCalendar } from
 '../widgets/Widgets';
+import { useApp } from '../../context/AppContext';
+
 export function AdminDashboard({ name }: {name: string;}) {
+  const { school } = useApp();
+  const schoolName = school?.name || 'your institution';
+  const studentCount = school?.student_count ?? '—';
+  const teacherCount = school?.teacher_count ?? '—';
+
   return (
     <div>
       <PageHeader
         title={`Good morning, ${name.split(' ')[0]}`}
-        description="Here’s how Key International School is growing today — a calm overview of your whole community."
+        description={`Here’s how ${schoolName} is growing today — a calm overview of your whole community.`}
         actions={
         <>
             <Button variant="secondary">
@@ -32,14 +39,14 @@ export function AdminDashboard({ name }: {name: string;}) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           label="Total Students"
-          value={214}
+          value={studentCount}
           icon="Users"
           tone="brand"
           delta={4} />
         
         <StatCard
           label="Teachers"
-          value={28}
+          value={teacherCount}
           icon="GraduationCap"
           tone="emerald"
           delta={2} />
@@ -101,7 +108,6 @@ export function AdminDashboard({ name }: {name: string;}) {
               icon="CalendarDays"
               tone="brand"
               hint="Next 10 days" />
-            
           </div>
 
           <AnnouncementsCard />
