@@ -26,7 +26,6 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
-        request = self.context.get("request")
         student = attrs.get("student", getattr(self.instance, "student", None))
         classroom = attrs.get("classroom", getattr(self.instance, "classroom", None))
         academic_year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
@@ -46,9 +45,14 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         if classroom.term_id != term.id:
             raise serializers.ValidationError({"classroom": "Classroom must belong to the selected term."})
 
-        if self.instance is None and Enrollment.objects.filter(
-            student=student, academic_year=academic_year, term=term
-        ).exists():
+        duplicate = Enrollment.objects.filter(
+            student=student,
+            academic_year=academic_year,
+            term=term,
+        )
+        if self.instance is not None:
+            duplicate = duplicate.exclude(pk=self.instance.pk)
+        if duplicate.exists():
             raise serializers.ValidationError({"student": "This student is already enrolled for this academic year and term."})
 
         return attrs
