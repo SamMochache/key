@@ -26,12 +26,20 @@ def user_school(user):
     return None
 
 
-def scoped_users(school):
-    return User.objects.filter(
-        Q(teacher_profile__school=school)
-        | Q(student_profile__school=school)
-        | Q(parent_profile__school=school)
-    ).filter(is_active=True).distinct()
+def scoped_users(school=None):
+    qs = User.objects.filter(is_active=True)
+    profile_filter = Q(teacher_profile__isnull=False) | Q(student_profile__isnull=False) | Q(parent_profile__isnull=False)
+    if school is not None:
+        profile_filter &= Q(teacher_profile__school=school) | Q(student_profile__school=school) | Q(parent_profile__school=school)
+    return qs.filter(profile_filter).distinct()
+
+
+def recipient_school(user):
+    for relation in ("teacher_profile", "student_profile", "parent_profile"):
+        profile = getattr(user, relation, None)
+        if profile is not None:
+            return profile.school
+    return None
 
 
 class CommunicationAccessPermission(permissions.BasePermission):
@@ -51,14 +59,12 @@ class CommunicationMessageViewSet(viewsets.ModelViewSet):
         qs = CommunicationMessage.objects.select_related("sender", "recipient", "school")
         school_id = self.request.query_params.get("school")
         school = get_object_or_404(School, pk=school_id) if is_admin(user) and school_id else user_school(user)
-        if school is None:
+        if school is not None:
+            qs = qs.filter(school=school)
+        elif not is_admin(user):
             return qs.none()
-        qs = qs.filter(school=school)
         folder = self.request.query_params.get("folder", "inbox")
-        if folder == "sent":
-            qs = qs.filter(sender=user)
-        else:
-            qs = qs.filter(recipient=user)
+        qs = qs.filter(sender=user) if folder == "sent" else qs.filter(recipient=user)
         if self.request.query_params.get("unread") == "true":
             qs = qs.filter(read_at__isnull=True)
         return qs
@@ -68,17 +74,19 @@ class CommunicationMessageViewSet(viewsets.ModelViewSet):
         recipient_id = data.get("recipient")
         if not recipient_id:
             return Response({"recipient": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
-
-        school = user_school(request.user)
-        if is_admin(request.user) and data.get("school"):
-            school = get_object_or_404(School, pk=data["school"])
-        if school is None:
-            return Response({"detail": "Select an institution before sending a message."}, status=status.HTTP_400_BAD_REQUEST)
-
-        recipient = get_object_or_404(scoped_users(school), pk=recipient_id)
+        sender_school = user_school(request.user)
+        school = sender_school
+        recipient_queryset = scoped_users(sender_school) if sender_school else scoped_users()
+        recipient = get_object_or_404(recipient_queryset, pk=recipient_id)
         if recipient == request.user:
             return Response({"recipient": ["You cannot send a message to yourself."]}, status=status.HTTP_400_BAD_REQUEST)
-
+        if is_admin(request.user) and data.get("school"):
+            school = get_object_or_404(School, pk=data["school"])
+            recipient = get_object_or_404(scoped_users(school), pk=recipient_id)
+        if school is None:
+            school = recipient_school(recipient)
+        if school is None:
+            return Response({"detail": "The recipient is not associated with an institution."}, status=status.HTTP_400_BAD_REQUEST)
         serializer = self.get_serializer(data={**data, "school": str(school.pk), "recipient": str(recipient.pk)})
         serializer.is_valid(raise_exception=True)
         serializer.save(sender=request.user)
@@ -86,9 +94,7 @@ class CommunicationMessageViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def read(self, request, pk=None):
-        message = get_object_or_404(self.get_queryset(), pk=pk)
-        if message.recipient_id != request.user.id:
-            return Response({"detail": "Only the recipient can mark this message as read."}, status=status.HTTP_403_FORBIDDEN)
+        message = get_object_or_404(self.get_queryset().filter(recipient=request.user), pk=pk)
         if message.read_at is None:
             message.read_at = timezone.now()
             message.save(update_fields=["read_at", "updated_at"])
@@ -102,8 +108,6 @@ class CommunicationContactsView(viewsets.ViewSet):
         school = user_school(request.user)
         if is_admin(request.user) and request.query_params.get("school"):
             school = get_object_or_404(School, pk=request.query_params["school"])
-        if school is None:
-            return Response([])
         contacts = scoped_users(school).exclude(pk=request.user.pk)
         search = request.query_params.get("search", "").strip()
         if search:
