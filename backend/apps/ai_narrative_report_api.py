@@ -33,11 +33,27 @@ class AIRuntimeError(Exception):
     pass
 
 
-def _extract_output_text(payload):
+def _provider_settings():
+    provider = os.getenv("AI_REPORT_PROVIDER", "gemini").lower()
+    if provider == "openai":
+        return provider, os.getenv("OPENAI_API_KEY"), os.getenv("OPENAI_AI_REPORT_MODEL", "gpt-5.6-luna")
+    return provider, os.getenv("GEMINI_API_KEY"), os.getenv("GEMINI_AI_REPORT_MODEL", "gemini-3-flash-preview")
+
+
+def _extract_gemini_text(payload):
+    parts = []
+    for candidate in payload.get("candidates", []):
+        for part in candidate.get("content", {}).get("parts", []):
+            value = part.get("text")
+            if isinstance(value, str):
+                parts.append(value)
+    return "".join(parts).strip()
+
+
+def _extract_openai_text(payload):
     text = payload.get("output_text")
     if isinstance(text, str) and text.strip():
         return text.strip()
-
     parts = []
     for item in payload.get("output", []):
         for content in item.get("content", []):
@@ -47,12 +63,26 @@ def _extract_output_text(payload):
     return "".join(parts).strip()
 
 
-def _generate_narrative(facts):
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise AIRuntimeError("OPENAI_API_KEY is not configured on the backend.")
+def _parse_narrative(output):
+    if not output:
+        raise AIRuntimeError("The AI provider returned an empty narrative.")
+    try:
+        result = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise AIRuntimeError("The AI provider returned an invalid narrative format.") from exc
 
-    model = os.getenv("OPENAI_AI_REPORT_MODEL", "gpt-5.6-luna")
+    required = {"summary", "strengths", "development_areas", "next_steps", "teacher_note"}
+    if not required.issubset(result):
+        raise AIRuntimeError("The AI provider returned an incomplete narrative.")
+    return {key: str(result[key]).strip() for key in required}
+
+
+def _generate_narrative(facts):
+    provider, api_key, model = _provider_settings()
+    if not api_key:
+        variable = "GEMINI_API_KEY" if provider == "gemini" else "OPENAI_API_KEY"
+        raise AIRuntimeError(f"{variable} is not configured on the backend.")
+
     instructions = """
 You are the narrative-reporting assistant for a school management system.
 Generate a professional learner progress narrative from ONLY the supplied facts.
@@ -65,22 +95,48 @@ Return valid JSON with exactly these string fields:
 summary, strengths, development_areas, next_steps, teacher_note.
 Each field should be a concise paragraph. Refer to the learner by first name only.
 """.strip()
-    body = json.dumps({
-        "model": model,
-        "instructions": instructions,
-        "input": json.dumps(facts, ensure_ascii=False),
-        "max_output_tokens": 900,
-    }).encode("utf-8")
+    user_input = json.dumps(facts, ensure_ascii=False)
 
-    req = request.Request(
-        "https://api.openai.com/v1/responses",
-        data=body,
-        headers={
+    if provider == "openai":
+        body = json.dumps({
+            "model": model,
+            "instructions": instructions,
+            "input": user_input,
+            "max_output_tokens": 900,
+        }).encode("utf-8")
+        endpoint = "https://api.openai.com/v1/responses"
+        headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+        }
+    else:
+        schema = {
+            "type": "OBJECT",
+            "properties": {
+                "summary": {"type": "STRING"},
+                "strengths": {"type": "STRING"},
+                "development_areas": {"type": "STRING"},
+                "next_steps": {"type": "STRING"},
+                "teacher_note": {"type": "STRING"},
+            },
+            "required": ["summary", "strengths", "development_areas", "next_steps", "teacher_note"],
+        }
+        body = json.dumps({
+            "systemInstruction": {"parts": [{"text": instructions}]},
+            "contents": [{"role": "user", "parts": [{"text": user_input}]}],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "responseSchema": schema,
+                "maxOutputTokens": 900,
+            },
+        }).encode("utf-8")
+        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        headers = {
+            "x-goog-api-key": api_key,
+            "Content-Type": "application/json",
+        }
+
+    req = request.Request(endpoint, data=body, headers=headers, method="POST")
     try:
         with request.urlopen(req, timeout=45) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -90,18 +146,8 @@ Each field should be a concise paragraph. Refer to the learner by first name onl
     except error.URLError as exc:
         raise AIRuntimeError("Unable to reach the AI provider.") from exc
 
-    output = _extract_output_text(payload)
-    if not output:
-        raise AIRuntimeError("The AI provider returned an empty narrative.")
-    try:
-        result = json.loads(output)
-    except json.JSONDecodeError as exc:
-        raise AIRuntimeError("The AI provider returned an invalid narrative format.") from exc
-
-    required = {"summary", "strengths", "development_areas", "next_steps", "teacher_note"}
-    if not required.issubset(result):
-        raise AIRuntimeError("The AI provider returned an incomplete narrative.")
-    return {key: str(result[key]).strip() for key in required}
+    output = _extract_openai_text(payload) if provider == "openai" else _extract_gemini_text(payload)
+    return _parse_narrative(output)
 
 
 def _build_facts(enrollment, year, term):
@@ -196,7 +242,7 @@ def _staff_school(request):
 
 
 def _get_report_for_staff(request, report_id):
-    role, school = _staff_school(request)
+    _, school = _staff_school(request)
     report = AINarrativeReport.objects.select_related(
         "student", "academic_year", "term", "generated_by", "reviewed_by", "published_by"
     ).filter(id=report_id).first()
@@ -219,9 +265,7 @@ class AINarrativeReportView(views.APIView):
         _, school = _staff_school(request)
         reports = AINarrativeReport.objects.select_related("student", "academic_year", "term")
         if school is not None:
-            reports = reports.filter(
-                student__enrollments__classroom__school_id=school.id,
-            ).distinct()
+            reports = reports.filter(student__enrollments__classroom__school_id=school.id).distinct()
         if request.query_params.get("student"):
             reports = reports.filter(student_id=request.query_params["student"])
         if request.query_params.get("academic_year"):
@@ -256,9 +300,7 @@ class AINarrativeReportView(views.APIView):
         if school is not None and enrollment.classroom.school_id != school.id:
             raise PermissionDenied("The student does not belong to your institution.")
 
-        existing = AINarrativeReport.objects.filter(
-            student_id=student_id, academic_year_id=year.id, term_id=term.id
-        ).first()
+        existing = AINarrativeReport.objects.filter(student_id=student_id, academic_year_id=year.id, term_id=term.id).first()
         if existing and existing.status == AINarrativeReport.Status.PUBLISHED:
             return JsonResponse({"detail": "A published report already exists for this learner and period."}, status=409)
 
@@ -268,6 +310,7 @@ class AINarrativeReportView(views.APIView):
         except AIRuntimeError as exc:
             return JsonResponse({"detail": str(exc)}, status=503)
 
+        _, _, model = _provider_settings()
         report, _ = AINarrativeReport.objects.update_or_create(
             student_id=student_id,
             academic_year_id=year.id,
@@ -280,7 +323,7 @@ class AINarrativeReportView(views.APIView):
                 "generated_by": request.user,
                 "reviewed_by": None,
                 "published_by": None,
-                "model_used": os.getenv("OPENAI_AI_REPORT_MODEL", "gpt-5.6-luna"),
+                "model_used": model,
                 "reviewed_at": None,
                 "published_at": None,
             },
