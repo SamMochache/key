@@ -3,6 +3,7 @@ import type { Role } from '../../lib/types';
 export interface NavItem { label: string; to: string; icon: string; roles: Role[]; }
 export interface NavGroup { title: string; items: NavItem[]; }
 const ALL: Role[] = ['admin', 'teacher', 'student'];
+const COMMUNITY: Role[] = ['admin', 'teacher', 'student', 'parent'];
 export const navGroups: NavGroup[] = [
   { title: 'Overview', items: [{ label: 'Dashboard', to: '/', icon: 'LayoutDashboard', roles: [...ALL, 'parent'] }] },
   { title: 'People', items: [
@@ -25,7 +26,7 @@ export const navGroups: NavGroup[] = [
   ] },
   { title: 'School Life', items: [
     { label: 'Calendar', to: '/calendar', icon: 'CalendarDays', roles: ALL },
-    { label: 'Communication', to: '/communication', icon: 'MessagesSquare', roles: ALL },
+    { label: 'Communication', to: '/communication', icon: 'MessagesSquare', roles: COMMUNITY },
     { label: 'Analytics', to: '/analytics', icon: 'TrendingUp', roles: ['admin', 'teacher'] },
     { label: 'Reports', to: '/reports', icon: 'FileBarChart', roles: ['admin', 'teacher'] }
   ] }
