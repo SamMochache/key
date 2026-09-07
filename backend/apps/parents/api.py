@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import permissions, status, views
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -32,8 +33,10 @@ class ParentManagementView(views.APIView):
         search = request.query_params.get("search", "").strip()
         if search:
             parents = parents.filter(
-                user__first_name__icontains=search
-            ) | parents.filter(user__last_name__icontains=search)
+                Q(user__first_name__icontains=search)
+                | Q(user__last_name__icontains=search)
+                | Q(user__email__icontains=search)
+            )
         results = []
         for parent in parents[:100]:
             links = parent.student_relationships.filter(is_active=True).select_related("student__user")
@@ -99,6 +102,8 @@ class ParentManagementView(views.APIView):
             phone_number=phone_number,
         )
         parent = Parent.objects.create(user=user, school=school)
+        if ParentStudentRelationship.objects.filter(parent=parent, student=student).exists():
+            return Response({"detail": "This parent is already linked to the selected student."}, status=400)
         link = ParentStudentRelationship.objects.create(
             parent=parent,
             student=student,
