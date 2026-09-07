@@ -64,6 +64,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export async function getMyPortfolio() { return request<ApiPortfolio>('/portfolios/mine/'); }
 export async function listPortfolios() { const data = await request<Paginated<ApiPortfolio> | ApiPortfolio[]>('/portfolios/'); return Array.isArray(data) ? data : data.results; }
+export async function createPortfolio(student: string, summary = '') { return request<ApiPortfolio>('/portfolios/', { method: 'POST', body: JSON.stringify({ student, summary }) }); }
 export async function updatePortfolio(id: string, summary: string) { return request<ApiPortfolio>(`/portfolios/${id}/`, { method: 'PATCH', body: JSON.stringify({ summary }) }); }
 export async function listPortfolioItems(params: { portfolio?: string; itemType?: PortfolioItemType; search?: string } = {}) {
   const query = new URLSearchParams();
