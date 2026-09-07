@@ -1,4 +1,5 @@
 from io import BytesIO
+from xml.sax.saxutils import escape
 
 from django.http import HttpResponse, JsonResponse
 from rest_framework import permissions, views
@@ -7,7 +8,14 @@ from rest_framework.exceptions import PermissionDenied
 from apps.assessments.models import AINarrativeReport
 from apps.assessments.permissions import UserRole, get_user_role, get_user_school
 from apps.enrollment.models import Enrollment
-from apps.reporting.pdf import build_document, data_table, report_header, report_styles, summary_table
+from apps.reporting.pdf import (
+    build_document,
+    data_table,
+    footer,
+    report_header,
+    report_styles,
+    summary_table,
+)
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, Spacer
 
@@ -60,7 +68,7 @@ class PublishedAINarrativeReportView(views.APIView):
 
 def _published_report_for_user(request, report_id):
     report = AINarrativeReport.objects.select_related(
-        "student__user", "academic_year", "term", "published_by"
+        "student__user", "student__school", "academic_year", "term", "published_by"
     ).filter(id=report_id, status=AINarrativeReport.Status.PUBLISHED).first()
     if report is None:
         return None
@@ -88,9 +96,7 @@ class PublishedAINarrativeReportPdfView(views.APIView):
         if report is None:
             return JsonResponse({"detail": "Published report not found."}, status=404)
 
-        enrollment = Enrollment.objects.select_related(
-            "classroom", "classroom__school", "classroom__cambridge_stage"
-        ).filter(
+        enrollment = Enrollment.objects.select_related("classroom", "classroom__school").filter(
             student_id=report.student_id,
             academic_year_id=report.academic_year_id,
             term_id=report.term_id,
@@ -111,18 +117,17 @@ class PublishedAINarrativeReportPdfView(views.APIView):
         buffer = BytesIO()
         document = build_document(buffer, title="KEY AI Learning Progress Report")
         story = []
-        school_name = enrollment.classroom.school.name
         report_header(
             story,
-            school_name,
+            enrollment.classroom.school.name,
             "AI Learning Progress Report",
-            f"{report.academic_year.name} · Term {report.term.term_number} · Teacher-reviewed and published",
+            f"{escape(report.academic_year.name)} · Term {report.term.term_number} · Teacher-reviewed and published",
         )
 
         story.append(summary_table([
-            f"Learner\n{learner.get('first_name') or report.student.user.first_name}",
-            f"Admission\n{report.student.admission_number}",
-            f"Class\n{enrollment.classroom.name}",
+            f"Learner\n{escape(str(learner.get('first_name') or report.student.user.first_name))}",
+            f"Admission\n{escape(report.student.admission_number)}",
+            f"Class\n{escape(enrollment.classroom.name)}",
             f"Assessment\n{assessment.get('average_percentage') if assessment.get('average_percentage') is not None else '—'}%",
             f"Attendance\n{attendance.get('attendance_percentage') if attendance.get('attendance_percentage') is not None else '—'}%",
         ], [38 * mm, 34 * mm, 42 * mm, 38 * mm, 38 * mm]))
@@ -137,7 +142,7 @@ class PublishedAINarrativeReportPdfView(views.APIView):
         ]
         for title, text in sections:
             story.append(Paragraph(title, styles["heading"]))
-            story.append(Paragraph(text, styles["body"]))
+            story.append(Paragraph(escape(str(text)), styles["body"]))
 
         if competencies:
             story.append(Paragraph("Competency Evidence", styles["heading"]))
@@ -149,9 +154,9 @@ class PublishedAINarrativeReportPdfView(views.APIView):
             ]]
             for item in competencies:
                 rows.append([
-                    Paragraph(str(item.get("name", "")), styles["table"]),
+                    Paragraph(escape(str(item.get("name", ""))), styles["table"]),
                     Paragraph(str(item.get("observations", 0)), styles["table"]),
-                    Paragraph(str(item.get("highest_level", "Not recorded")), styles["table"]),
+                    Paragraph(escape(str(item.get("highest_level", "Not recorded"))), styles["table"]),
                     Paragraph(str(item.get("average_level") if item.get("average_level") is not None else "—"), styles["table"]),
                 ])
             story.append(data_table(rows, [78 * mm, 32 * mm, 52 * mm, 38 * mm], center_from=1))
@@ -170,7 +175,7 @@ class PublishedAINarrativeReportPdfView(views.APIView):
             styles["small"],
         ))
 
-        document.build(story, onFirstPage=lambda c, d: __import__("apps.reporting.pdf", fromlist=["footer"]).footer(c, d), onLaterPages=lambda c, d: __import__("apps.reporting.pdf", fromlist=["footer"]).footer(c, d))
+        document.build(story, onFirstPage=footer, onLaterPages=footer)
         buffer.seek(0)
         response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
         safe_name = report.student.user.get_full_name().strip().replace(" ", "-") or report.student.admission_number
