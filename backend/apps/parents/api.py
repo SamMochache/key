@@ -77,33 +77,42 @@ class ParentManagementView(views.APIView):
         primary = bool(request.data.get("is_primary_contact", False))
         can_view_reports = bool(request.data.get("can_view_reports", True))
 
-        if not all([email, password, first_name, last_name, school_id, student_id]):
-            return Response({"detail": "First name, last name, email, password, school, and student are required."}, status=400)
-        if User.objects.filter(email=email).exists():
-            return Response({"detail": "A user with this email already exists."}, status=409)
+        if not all([email, first_name, last_name, school_id, student_id]):
+            return Response({"detail": "First name, last name, email, school, and student are required."}, status=400)
+        if relationship not in dict(ParentStudentRelationship.Relationship.choices):
+            return Response({"detail": "Invalid relationship type."}, status=400)
 
         school = School.objects.filter(id=school_id, is_active=True).first()
         if school is None:
             return Response({"detail": "The selected school was not found."}, status=404)
         if role != UserRole.ADMIN and (staff_school is None or school.id != staff_school.id):
-            raise PermissionDenied("You can only create parent accounts for your institution.")
+            raise PermissionDenied("You can only manage parent accounts for your institution.")
 
         student = Student.objects.filter(id=student_id, school_id=school.id, is_active=True).select_related("user").first()
         if student is None:
             return Response({"detail": "The selected student does not belong to the selected institution."}, status=404)
-        if relationship not in dict(ParentStudentRelationship.Relationship.choices):
-            return Response({"detail": "Invalid relationship type."}, status=400)
 
-        user = User.objects.create_user(
-            email=email,
-            password=password,
-            first_name=first_name,
-            last_name=last_name,
-            phone_number=phone_number,
-        )
-        parent = Parent.objects.create(user=user, school=school)
-        if ParentStudentRelationship.objects.filter(parent=parent, student=student).exists():
-            return Response({"detail": "This parent is already linked to the selected student."}, status=400)
+        existing_user = User.objects.filter(email=email).first()
+        if existing_user is not None:
+            parent = getattr(existing_user, "parent_profile", None)
+            if parent is None:
+                return Response({"detail": "A user with this email already exists and is not a parent account."}, status=409)
+            if parent.school_id != school.id:
+                raise PermissionDenied("The existing parent belongs to another institution.")
+            if ParentStudentRelationship.objects.filter(parent=parent, student=student).exists():
+                return Response({"detail": "This parent is already linked to the selected student."}, status=409)
+        else:
+            if not password:
+                return Response({"detail": "A password is required when creating a new parent account."}, status=400)
+            existing_user = User.objects.create_user(
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                phone_number=phone_number,
+            )
+            parent = Parent.objects.create(user=existing_user, school=school)
+
         link = ParentStudentRelationship.objects.create(
             parent=parent,
             student=student,
