@@ -12,6 +12,7 @@ import { Classes } from './pages/Classes';
 import { ClassProfile } from './pages/ClassProfile';
 import { Attendance } from './pages/Attendance';
 import { Academics } from './pages/Academics';
+import { Lessons } from './pages/Lessons';
 import { Assessments } from './pages/Assessments';
 import { AIReports } from './pages/AIReports';
 import { Portfolio } from './pages/Portfolio';
@@ -44,6 +45,7 @@ export function App() {
               </Route>
               <Route element={<ProtectedRoute roles={[...STAFF]} />}>
                 <Route path="/attendance" element={<Attendance />} />
+                <Route path="/lessons" element={<Lessons />} />
                 <Route path="/assessments" element={<Assessments />} />
                 <Route path="/ai-reports" element={<AIReports />} />
                 <Route path="/analytics" element={<Analytics />} />
