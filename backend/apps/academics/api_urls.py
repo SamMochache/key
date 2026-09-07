@@ -2,13 +2,13 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .admin_actions import SetCurrentAcademicYearView, SetCurrentTermView
+from .programme_views import ProgrammeViewSet
 from .views import (
     AcademicYearViewSet,
     CambridgeStageViewSet,
     ClassroomViewSet,
     CurriculumViewSet,
     MontessoriLevelViewSet,
-    ProgrammeViewSet,
     StageSubjectViewSet,
     SubjectViewSet,
     TermViewSet,
