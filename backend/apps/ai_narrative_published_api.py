@@ -29,23 +29,27 @@ class PublishedAINarrativeReportView(views.APIView):
 
         if role == UserRole.STUDENT:
             reports = reports.filter(student_id=request.user.student_profile.id, status=AINarrativeReport.Status.PUBLISHED)
+        elif role == UserRole.PARENT:
+            reports = reports.filter(
+                student__parent_relationships__parent__user_id=request.user.id,
+                student__parent_relationships__is_active=True,
+                student__parent_relationships__can_view_reports=True,
+                status=AINarrativeReport.Status.PUBLISHED,
+            ).distinct()
         elif role in {UserRole.ADMIN, UserRole.TEACHER}:
             school = get_user_school(request.user)
             if school is not None:
-                reports = reports.filter(
-                    student__school_id=school.id,
-                    status=AINarrativeReport.Status.PUBLISHED,
-                )
+                reports = reports.filter(student__school_id=school.id, status=AINarrativeReport.Status.PUBLISHED)
             else:
                 reports = reports.filter(status=AINarrativeReport.Status.PUBLISHED)
         else:
-            raise PermissionDenied("Only students and staff can access published AI reports.")
+            raise PermissionDenied("Only students, parents, and staff can access published AI reports.")
 
         if request.query_params.get("academic_year"):
             reports = reports.filter(academic_year_id=request.query_params["academic_year"])
         if request.query_params.get("term"):
             reports = reports.filter(term_id=request.query_params["term"])
-        if request.query_params.get("student") and role != UserRole.STUDENT:
+        if request.query_params.get("student") and role in {UserRole.ADMIN, UserRole.TEACHER, UserRole.PARENT}:
             reports = reports.filter(student_id=request.query_params["student"])
 
         results = []
@@ -77,6 +81,16 @@ def _published_report_for_user(request, report_id):
     if role == UserRole.STUDENT:
         if report.student_id != request.user.student_profile.id:
             raise PermissionDenied("You can only access your own published report.")
+        return report
+
+    if role == UserRole.PARENT:
+        allowed = report.student.parent_relationships.filter(
+            parent__user_id=request.user.id,
+            is_active=True,
+            can_view_reports=True,
+        ).exists()
+        if not allowed:
+            raise PermissionDenied("You do not have report access for this student.")
         return report
 
     if role in {UserRole.ADMIN, UserRole.TEACHER}:
