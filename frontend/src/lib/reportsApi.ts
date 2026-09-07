@@ -58,7 +58,11 @@ export async function downloadPortfolioEvidenceReport(params: { classroom?: stri
 export async function downloadConsolidatedReport(params: { classroom?: string; student?: string; academicYear: string; term: string }) { return downloadPdf('/reports/consolidated/', reportQuery(params)); }
 
 export interface AINarrativeResponse {
-  status: 'generated';
+  id: string;
+  status: 'DRAFT' | 'REVIEWED' | 'PUBLISHED';
+  student: string;
+  academic_year: string;
+  term: string;
   facts: {
     learner: { first_name: string; admission_number: string; class: string; stage: string | null };
     period: { academic_year: string; term: number };
@@ -74,23 +78,55 @@ export interface AINarrativeResponse {
     next_steps: string;
     teacher_note: string;
   };
+  generated_content: AINarrativeResponse['narrative'];
+  edited_content: Partial<AINarrativeResponse['narrative']>;
   review_required: boolean;
   model: string;
+  generated_at: string;
+  reviewed_at: string | null;
+  published_at: string | null;
 }
 
-export async function generateAINarrativeReport(params: { student: string; academicYear: string; term: string }) {
-  const response = await fetch(`${API_BASE_URL}/reports/ai-narrative/`, {
-    method: 'POST',
+async function jsonRequest(path: string, options: RequestInit = {}) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
       ...(getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {}),
+      ...(options.headers || {}),
     },
-    body: JSON.stringify({ student: params.student, academic_year: params.academicYear, term: params.term }),
   });
   const detail = await response.text().catch(() => '');
   let payload: any = {};
   try { payload = detail ? JSON.parse(detail) : {}; } catch { /* handled below */ }
-  if (!response.ok) throw new Error(payload.detail || `Unable to generate AI report (${response.status}).`);
-  return payload as AINarrativeResponse;
+  if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status}).`);
+  return payload;
+}
+
+export async function generateAINarrativeReport(params: { student: string; academicYear: string; term: string }) {
+  return jsonRequest('/reports/ai-narrative/', {
+    method: 'POST',
+    body: JSON.stringify({ student: params.student, academic_year: params.academicYear, term: params.term }),
+  }) as Promise<AINarrativeResponse>;
+}
+
+export async function listAINarrativeReports(params: { student?: string; academicYear?: string; term?: string } = {}) {
+  const query = new URLSearchParams();
+  if (params.student) query.set('student', params.student);
+  if (params.academicYear) query.set('academic_year', params.academicYear);
+  if (params.term) query.set('term', params.term);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return jsonRequest(`/reports/ai-narrative/${suffix}`) as Promise<{ results: AINarrativeResponse[] }>;
+}
+
+export async function saveAINarrativeReport(id: string, narrative: AINarrativeResponse['narrative']) {
+  return jsonRequest('/reports/ai-narrative/', {
+    method: 'PATCH',
+    body: JSON.stringify({ id, narrative }),
+  }) as Promise<AINarrativeResponse>;
+}
+
+export async function publishAINarrativeReport(id: string) {
+  return jsonRequest(`/reports/ai-narrative/${id}/publish/`, { method: 'POST' }) as Promise<AINarrativeResponse>;
 }
