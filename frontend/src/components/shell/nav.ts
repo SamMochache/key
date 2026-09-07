@@ -15,6 +15,7 @@ export const navGroups: NavGroup[] = [
   { title: 'Learning', items: [
     { label: 'Academics', to: '/academics', icon: 'BookOpen', roles: ['admin', 'teacher', 'student'] },
     { label: 'Lessons', to: '/lessons', icon: 'BookOpenCheck', roles: ['admin', 'teacher'] },
+    { label: 'Timetables', to: '/timetables', icon: 'CalendarClock', roles: ['admin', 'teacher'] },
     { label: 'Assessments', to: '/assessments', icon: 'ClipboardCheck', roles: ['admin', 'teacher'] },
     { label: 'Evidence', to: '/evidence', icon: 'Files', roles: ALL },
     { label: 'AI Reports', to: '/ai-reports', icon: 'Sparkles', roles: ['admin', 'teacher'] },
