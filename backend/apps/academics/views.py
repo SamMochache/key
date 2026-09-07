@@ -1,7 +1,8 @@
-from django.db.models import Count, Q
-from rest_framework import permissions, viewsets
+from django.db.models import Count, Q, Prefetch
+from rest_framework import permissions, status, viewsets
+from rest_framework.response import Response
 
-from .models import AcademicYear, CambridgeStage, Classroom, Curriculum, MontessoriLevel, StageSubject, Subject, Term
+from .models import AcademicYear, CambridgeStage, Classroom, ClassroomTeacherAssignment, Curriculum, MontessoriLevel, StageSubject, Subject, Term
 from .serializers import (
     AcademicYearSerializer,
     CambridgeStageSerializer,
@@ -149,6 +150,15 @@ class ClassroomViewSet(SchoolScopedViewSet):
             .select_related(
                 "school", "academic_year", "term", "cambridge_stage", "montessori_level"
             )
+            .prefetch_related(
+                Prefetch(
+                    "teacher_assignments",
+                    queryset=ClassroomTeacherAssignment.objects.filter(
+                        role=ClassroomTeacherAssignment.Role.PRIMARY,
+                        is_active=True,
+                    ).select_related("teacher__user"),
+                )
+            )
             .annotate(
                 student_count=Count(
                     "enrollments__student",
@@ -185,3 +195,9 @@ class ClassroomViewSet(SchoolScopedViewSet):
         if not is_admin(self.request.user):
             school = user_school(self.request.user)
         serializer.save(school=school)
+
+    def destroy(self, request, *args, **kwargs):
+        classroom = self.get_object()
+        classroom.is_active = False
+        classroom.save(update_fields=["is_active", "updated_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
