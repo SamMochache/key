@@ -1,7 +1,8 @@
 from django.db.models import Q
 from rest_framework import permissions, serializers, viewsets
+from rest_framework.exceptions import PermissionDenied
 
-from .models import AcademicYear, CalendarEvent, Term
+from .models import CalendarEvent
 from .views import is_admin, user_school
 
 
@@ -12,11 +13,7 @@ class CalendarEventSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CalendarEvent
-        fields = (
-            "id", "school", "school_name", "academic_year", "academic_year_name",
-            "term", "term_number", "title", "event_type", "start_at", "end_at",
-            "all_day", "location", "description", "is_active", "created_at", "updated_at",
-        )
+        fields = ("id", "school", "school_name", "academic_year", "academic_year_name", "term", "term_number", "title", "event_type", "start_at", "end_at", "all_day", "location", "description", "is_active", "created_at", "updated_at")
         read_only_fields = ("id", "school_name", "academic_year_name", "term_number", "created_at", "updated_at")
 
     def validate(self, attrs):
@@ -31,10 +28,14 @@ class CalendarEventSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"academic_year": "Academic year must belong to the selected institution."})
         if term and academic_year and term.academic_year_id != academic_year.id:
             raise serializers.ValidationError({"term": "Term must belong to the selected academic year."})
+        if term and school and term.academic_year.school_id != school.id:
+            raise serializers.ValidationError({"term": "Term must belong to the selected institution."})
         return attrs
 
 
 class CalendarAccessPermission(permissions.BasePermission):
+    message = "You do not have permission to access calendar data."
+
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
@@ -56,22 +57,15 @@ class CalendarEventViewSet(viewsets.ModelViewSet):
             school_id = self.request.query_params.get("school")
             if school_id:
                 queryset = queryset.filter(school_id=school_id)
-
-        academic_year = self.request.query_params.get("academic_year")
-        term = self.request.query_params.get("term")
-        event_type = self.request.query_params.get("event_type")
-        active = self.request.query_params.get("active")
+        for param, field in (("academic_year", "academic_year_id"), ("term", "term_id"), ("event_type", "event_type")):
+            value = self.request.query_params.get(param)
+            if value:
+                queryset = queryset.filter(**{field: value})
+        if self.request.query_params.get("active") in {"1", "true", "True"}:
+            queryset = queryset.filter(is_active=True)
         start = self.request.query_params.get("start")
         end = self.request.query_params.get("end")
         search = self.request.query_params.get("search", "").strip()
-        if academic_year:
-            queryset = queryset.filter(academic_year_id=academic_year)
-        if term:
-            queryset = queryset.filter(term_id=term)
-        if event_type:
-            queryset = queryset.filter(event_type=event_type)
-        if active in {"1", "true", "True"}:
-            queryset = queryset.filter(is_active=True)
         if start:
             queryset = queryset.filter(end_at__gte=start)
         if end:
@@ -88,5 +82,10 @@ class CalendarEventViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         if not is_admin(self.request.user):
-            raise permissions.PermissionDenied("Only administrators can manage calendar events.")
+            raise PermissionDenied("Only administrators can manage calendar events.")
         serializer.save()
+
+    def perform_destroy(self, instance):
+        if not is_admin(self.request.user):
+            raise PermissionDenied("Only administrators can manage calendar events.")
+        instance.delete()
