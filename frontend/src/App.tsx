@@ -17,6 +17,7 @@ import { Assessments } from './pages/Assessments';
 import { Evidence } from './pages/Evidence';
 import { AIReports } from './pages/AIReports';
 import { StudentAIReports } from './pages/StudentAIReports';
+import { ParentAIReports } from './pages/ParentAIReports';
 import { Portfolio } from './pages/Portfolio';
 import { Calendar } from './pages/Calendar';
 import { Communication } from './pages/Communication';
@@ -26,8 +27,9 @@ import { Reports } from './pages/Reports';
 const STAFF = ['admin', 'teacher'] as const;
 const PEOPLE = ['admin', 'teacher'] as const;
 const LEARNING = ['admin', 'teacher', 'student'] as const;
-const ALL = ['admin', 'teacher', 'student'] as const;
+const ALL = ['admin', 'teacher', 'student', 'parent'] as const;
 const STUDENT = ['student'] as const;
+const PARENT = ['parent'] as const;
 
 export function App() {
   return (
@@ -65,6 +67,9 @@ export function App() {
               </Route>
               <Route element={<ProtectedRoute roles={[...STUDENT]} />}>
                 <Route path="/my-ai-reports" element={<StudentAIReports />} />
+              </Route>
+              <Route element={<ProtectedRoute roles={[...PARENT]} />}>
+                <Route path="/learner-reports" element={<ParentAIReports />} />
               </Route>
               <Route path="*" element={<Dashboard />} />
             </Route>
