@@ -17,6 +17,7 @@ export const navGroups: NavGroup[] = [
     { label: 'Assessments', to: '/assessments', icon: 'ClipboardCheck', roles: ['admin', 'teacher'] },
     { label: 'Evidence', to: '/evidence', icon: 'Files', roles: ALL },
     { label: 'AI Reports', to: '/ai-reports', icon: 'Sparkles', roles: ['admin', 'teacher'] },
+    { label: 'My AI Reports', to: '/my-ai-reports', icon: 'FileText', roles: ['student'] },
     { label: 'Portfolio', to: '/portfolio', icon: 'FolderHeart', roles: ALL }
   ] },
   { title: 'School Life', items: [
