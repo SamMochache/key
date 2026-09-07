@@ -6,21 +6,27 @@ import React, {
   useContext
 } from 'react';
 import type { Role } from '../lib/types';
-import { getAccessToken, getCurrentUser } from '../lib/api';
+import { clearTokens, getAccessToken, getCurrentUser, type CurrentUser } from '../lib/api';
+
+export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 
 interface AppState {
   role: Role;
-  setRole: (r: Role) => void;
+  user: CurrentUser | null;
+  authStatus: AuthStatus;
+  refreshSession: () => Promise<void>;
+  logout: () => void;
   dark: boolean;
   toggleDark: () => void;
 }
 
 const AppContext = createContext<AppState | null>(null);
-
-const supportedRoles: Role[] = ['admin', 'principal', 'teacher', 'parent', 'student'];
+const supportedRoles: Role[] = ['admin', 'teacher', 'student'];
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [role, setRole] = useState<Role>('admin');
+  const [role, setRole] = useState<Role>('student');
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('loading');
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
@@ -29,30 +35,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     else root.classList.remove('dark');
   }, [dark]);
 
+  const refreshSession = useCallback(async () => {
+    const token = getAccessToken();
+    if (!token) {
+      setUser(null);
+      setAuthStatus('unauthenticated');
+      return;
+    }
+
+    setAuthStatus('loading');
+    try {
+      const currentUser = await getCurrentUser();
+      if (!supportedRoles.includes(currentUser.role as Role)) {
+        throw new Error('This account does not have a supported application role.');
+      }
+      setUser(currentUser);
+      setRole(currentUser.role as Role);
+      setAuthStatus('authenticated');
+    } catch (error) {
+      clearTokens();
+      setUser(null);
+      setAuthStatus('unauthenticated');
+      throw error;
+    }
+  }, []);
+
   useEffect(() => {
-    if (!getAccessToken()) return;
+    refreshSession().catch(() => undefined);
+  }, [refreshSession]);
 
-    let active = true;
-    getCurrentUser()
-      .then((user) => {
-        if (!active) return;
-        if (supportedRoles.includes(user.role as Role)) {
-          setRole(user.role as Role);
-        }
-      })
-      .catch(() => {
-        // The prototype role remains active when there is no valid session.
-      });
-
-    return () => {
-      active = false;
-    };
+  const logout = useCallback(() => {
+    clearTokens();
+    setUser(null);
+    setAuthStatus('unauthenticated');
   }, []);
 
   const toggleDark = useCallback(() => setDark((d) => !d), []);
 
   return (
-    <AppContext.Provider value={{ role, setRole, dark, toggleDark }}>
+    <AppContext.Provider value={{ role, user, authStatus, refreshSession, logout, dark, toggleDark }}>
       {children}
     </AppContext.Provider>
   );
