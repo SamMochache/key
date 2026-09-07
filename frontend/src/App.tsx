@@ -28,7 +28,7 @@ import { Reports } from './pages/Reports';
 const STAFF = ['admin', 'teacher'] as const;
 const PEOPLE = ['admin', 'teacher'] as const;
 const LEARNING = ['admin', 'teacher', 'student'] as const;
-const ALL = ['admin', 'teacher', 'student', 'parent'] as const;
+const ALL = ['admin', 'teacher', 'student'] as const;
 const STUDENT = ['student'] as const;
 const PARENT = ['parent'] as const;
 
