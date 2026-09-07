@@ -7,6 +7,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.schools.models import School
+from apps.notifications.services import notify
+from apps.notifications.models import Notification
 
 from .models import CommunicationMessage
 from .serializers import CommunicationContactSerializer, CommunicationMessageSerializer
@@ -90,6 +92,7 @@ class CommunicationMessageViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data={**data, "school": str(school.pk), "recipient": str(recipient.pk)})
         serializer.is_valid(raise_exception=True)
         serializer.save(sender=request.user)
+        notify(recipient=recipient, school=school, title=f"New message from {request.user.get_full_name() or request.user.email}", body=serializer.instance.subject, notification_type=Notification.Type.MESSAGE, link="/communication")
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
