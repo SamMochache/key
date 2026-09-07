@@ -4,10 +4,9 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { getCurrentUser } from '../lib/api';
-import { listSubmissions, type ApiSubmission } from '../lib/assessmentsApi';
+import { getCurrentUser, listStudents, listSubmissions, type ApiStudent, type ApiSubmission } from '../lib/api';
 import {
-  createPortfolioArtifact, createPortfolioItem, getMyPortfolio, listPortfolioItems, listPortfolios,
+  createPortfolio, createPortfolioArtifact, createPortfolioItem, getMyPortfolio, listPortfolioItems, listPortfolios,
   updatePortfolio, type ApiPortfolio, type ApiPortfolioItem, type PortfolioItemType,
 } from '../lib/portfolioApi';
 
@@ -25,6 +24,7 @@ const icons: Record<string, React.ElementType> = {
 export function Portfolio() {
   const [role, setRole] = useState('');
   const [portfolios, setPortfolios] = useState<ApiPortfolio[]>([]);
+  const [students, setStudents] = useState<ApiStudent[]>([]);
   const [portfolio, setPortfolio] = useState<ApiPortfolio | null>(null);
   const [items, setItems] = useState<ApiPortfolioItem[]>([]);
   const [submissions, setSubmissions] = useState<ApiSubmission[]>([]);
@@ -33,24 +33,29 @@ export function Portfolio() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [showPortfolioForm, setShowPortfolioForm] = useState(false);
   const [summary, setSummary] = useState('');
+  const [portfolioStudent, setPortfolioStudent] = useState('');
   const [form, setForm] = useState({ title: '', description: '', item_type: 'PROJECT' as PortfolioItemType, event_date: new Date().toISOString().slice(0, 10), assessment_submission: '', file: null as File | null, caption: '' });
   const isStudent = role === 'student';
   const canWrite = ['admin', 'teacher', 'student'].includes(role);
 
-  async function load() {
+  async function load(currentRole = role) {
     setLoading(true); setError('');
     try {
       const user = await getCurrentUser();
-      setRole(user.role);
-      const [current, allPortfolios, submissionData] = await Promise.all([
-        user.role === 'student' ? getMyPortfolio() : Promise.resolve(null),
-        user.role === 'student' ? Promise.resolve([]) : listPortfolios(),
-        canWrite ? listSubmissions() : Promise.resolve([]),
+      const resolvedRole = currentRole || user.role;
+      setRole(resolvedRole);
+      const [current, allPortfolios, submissionData, studentData] = await Promise.all([
+        resolvedRole === 'student' ? getMyPortfolio() : Promise.resolve(null),
+        resolvedRole === 'student' ? Promise.resolve([]) : listPortfolios(),
+        ['admin', 'teacher', 'student'].includes(resolvedRole) ? listSubmissions() : Promise.resolve([]),
+        ['admin', 'teacher'].includes(resolvedRole) ? listStudents({ isActive: true }) : Promise.resolve([]),
       ]);
       setPortfolio(current);
       setPortfolios(allPortfolios);
       setSubmissions(submissionData);
+      setStudents(studentData);
       const activeId = current?.id || selectedPortfolio || allPortfolios[0]?.id || '';
       setSelectedPortfolio(activeId);
       if (activeId) {
@@ -76,6 +81,23 @@ export function Portfolio() {
     finally { setSaving(false); }
   }
 
+  async function handleCreatePortfolio(event: React.FormEvent) {
+    event.preventDefault();
+    if (!portfolioStudent) return;
+    setSaving(true); setError('');
+    try {
+      const created = await createPortfolio(portfolioStudent);
+      setPortfolios((all) => [...all, created]);
+      setSelectedPortfolio(created.id);
+      setPortfolio(created);
+      setSummary('');
+      setPortfolioStudent('');
+      setShowPortfolioForm(false);
+      setItems([]);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to create portfolio.'); }
+    finally { setSaving(false); }
+  }
+
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault();
     if (!portfolio || !form.title.trim()) return;
@@ -84,18 +106,20 @@ export function Portfolio() {
       const item = await createPortfolioItem({ portfolio: portfolio.id, item_type: form.item_type, title: form.title.trim(), description: form.description.trim(), event_date: form.event_date, assessment_submission: form.assessment_submission || null });
       if (form.file) await createPortfolioArtifact(item.id, form.file, form.caption.trim());
       setForm({ title: '', description: '', item_type: 'PROJECT', event_date: new Date().toISOString().slice(0, 10), assessment_submission: '', file: null, caption: '' });
-      setShowForm(false); await load();
+      setShowForm(false); await load(role);
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to save portfolio item.'); }
     finally { setSaving(false); }
   }
 
   return <div>
-    <PageHeader title="Learning Portfolio" description="A living collection of each learner’s creations, milestones, and moments of growth." actions={canWrite && portfolio ? <Button onClick={() => setShowForm((v) => !v)}><PlusIcon className="h-4 w-4" /> Add to portfolio</Button> : undefined} />
+    <PageHeader title="Learning Portfolio" description="A living collection of each learner’s creations, milestones, and moments of growth." actions={canWrite && portfolio ? <Button onClick={() => setShowForm((v) => !v)}><PlusIcon className="h-4 w-4" /> Add to portfolio</Button> : canWrite && !isStudent ? <Button onClick={() => setShowPortfolioForm((v) => !v)}><PlusIcon className="h-4 w-4" /> Create portfolio</Button> : undefined} />
     {error && <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
     {!isStudent && portfolios.length > 0 && <Card className="mb-6 p-4"><label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Learner portfolio</label><select value={selectedPortfolio} onChange={async (e) => { const id = e.target.value; setSelectedPortfolio(id); const p = portfolios.find((x) => x.id === id) || null; setPortfolio(p); setSummary(p?.summary || ''); setItems(id ? await listPortfolioItems({ portfolio: id }) : []); }} className="mt-1.5 w-full max-w-2xl rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"><option value="">Select portfolio</option>{portfolios.map((p) => <option key={p.id} value={p.id}>{p.student_name} — {p.admission_number}</option>)}</select></Card>}
 
-    {loading ? <Card className="p-8 text-center text-sm text-slate-500">Loading portfolio…</Card> : !portfolio ? <Card className="p-8 text-center"><p className="font-semibold text-slate-800 dark:text-slate-100">No portfolio selected</p><p className="mt-1 text-sm text-slate-500">A learner portfolio will be created when the learner first opens this page.</p></Card> : <>
+    {!isStudent && showPortfolioForm && <Card className="mb-6 p-5"><form onSubmit={handleCreatePortfolio} className="space-y-4"><label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Learner<select required value={portfolioStudent} onChange={(e) => setPortfolioStudent(e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"><option value="">Select learner</option>{students.filter((s) => !portfolios.some((p) => p.student === s.id)).map((s) => <option key={s.id} value={s.id}>{s.full_name} — {s.admission_number}</option>)}</select></label><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setShowPortfolioForm(false)}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create portfolio'}</Button></div></form></Card>}
+
+    {loading ? <Card className="p-8 text-center text-sm text-slate-500">Loading portfolio…</Card> : !portfolio ? <Card className="p-8 text-center"><p className="font-semibold text-slate-800 dark:text-slate-100">No portfolio selected</p><p className="mt-1 text-sm text-slate-500">Select an existing learner portfolio or create one for a learner.</p></Card> : <>
       <Card className="mb-6 p-5"><div className="flex flex-col gap-4 md:flex-row md:items-end"><div className="flex-1"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{selectedStudentName}</p><h2 className="mt-1 text-xl font-bold text-slate-800 dark:text-slate-100">Learning story</h2><textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={3} placeholder="Add a short learner profile or reflection…" className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900" /></div><Button onClick={saveSummary} disabled={saving}>{saving ? 'Saving…' : 'Save summary'}</Button></div></Card>
 
       {canWrite && showForm && <Card className="mb-6 p-5"><form onSubmit={handleCreate} className="space-y-4"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><label className="text-sm font-medium text-slate-700 dark:text-slate-200">Type<select value={form.item_type} onChange={(e) => setForm({ ...form, item_type: e.target.value as PortfolioItemType })} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900">{itemTypes.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label><label className="text-sm font-medium text-slate-700 dark:text-slate-200">Date<input type="date" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} required className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900" /></label></div><label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Title<input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900" placeholder="e.g. Robotics prototype" /></label><label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Description<textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900" /></label>{visibleSubmissions.length > 0 && <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Assessment submission (optional)<select value={form.assessment_submission} onChange={(e) => setForm({ ...form, assessment_submission: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"><option value="">None</option>{visibleSubmissions.map((s) => <option key={s.id} value={s.id}>{s.student_name} — {s.admission_number}</option>)}</select></label>}<div className="grid grid-cols-1 gap-4 md:grid-cols-2"><label className="text-sm font-medium text-slate-700 dark:text-slate-200">Artifact file<input type="file" onChange={(e) => setForm({ ...form, file: e.target.files?.[0] || null })} className="mt-1.5 block w-full text-sm text-slate-500" /></label><label className="text-sm font-medium text-slate-700 dark:text-slate-200">Caption<input value={form.caption} onChange={(e) => setForm({ ...form, caption: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900" /></label></div><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setShowForm(false)}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save item'}</Button></div></form></Card>}
