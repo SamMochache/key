@@ -1,8 +1,5 @@
 from rest_framework import serializers
 
-from apps.assessments.models import AssessmentSubmission
-from apps.lessons.models import LessonSession
-
 from .models import Artifact, Portfolio, PortfolioItem
 
 
@@ -39,31 +36,33 @@ class PortfolioItemSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         portfolio = attrs.get("portfolio", getattr(self.instance, "portfolio", None))
+        if portfolio is None:
+            raise serializers.ValidationError({"portfolio": "A portfolio is required."})
         submission = attrs.get("assessment_submission", getattr(self.instance, "assessment_submission", None))
         lesson = attrs.get("lesson_session", getattr(self.instance, "lesson_session", None))
         if submission and submission.enrollment.student_id != portfolio.student_id:
             raise serializers.ValidationError({"assessment_submission": "The submission must belong to this student."})
-        if lesson:
-            classroom = lesson.timetable_entry.classroom
-            if not classroom.enrollments.filter(student_id=portfolio.student_id).exists():
-                raise serializers.ValidationError({"lesson_session": "The lesson must belong to this student's class."})
+        if lesson and not lesson.timetable_entry.classroom.enrollments.filter(student_id=portfolio.student_id).exists():
+            raise serializers.ValidationError({"lesson_session": "The lesson must belong to this student's class."})
         return attrs
 
 
 class PortfolioSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(source="student.user.full_name", read_only=True)
     admission_number = serializers.CharField(source="student.admission_number", read_only=True)
-    item_count = serializers.IntegerField(source="items.count", read_only=True)
+    item_count = serializers.SerializerMethodField()
+
+    def get_item_count(self, obj):
+        return obj.items.count()
+
+    def validate_student(self, student):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if getattr(request, "portfolio_role", None) == "student" and getattr(user, "student_profile", None).id != student.id:
+            raise serializers.ValidationError("You can only manage your own portfolio.")
+        return student
 
     class Meta:
         model = Portfolio
         fields = ["id", "student", "student_name", "admission_number", "summary", "item_count", "created_at", "updated_at"]
         read_only_fields = ["student_name", "admission_number", "item_count", "created_at", "updated_at"]
-
-    def validate_student(self, student):
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-        role = getattr(request, "portfolio_role", None)
-        if role == "student" and getattr(user, "student_profile", None).id != student.id:
-            raise serializers.ValidationError("You can only manage your own portfolio.")
-        return student
