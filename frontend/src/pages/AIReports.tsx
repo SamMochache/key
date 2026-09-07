@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2Icon, PencilIcon, PrinterIcon, SparklesIcon } from 'lucide-react';
+import { CheckCircle2Icon, Loader2Icon, PencilIcon, PrinterIcon, SendIcon, SparklesIcon } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { EmptyState } from '../components/ui/EmptyState';
 import { listAcademicYears, listStudents, listTerms, type ApiAcademicYear, type ApiStudent, type ApiTerm } from '../lib/api';
-import { generateAINarrativeReport, type AINarrativeResponse } from '../lib/reportsApi';
+import { generateAINarrativeReport, listAINarrativeReports, publishAINarrativeReport, saveAINarrativeReport, type AINarrativeResponse } from '../lib/reportsApi';
 
 export function AIReports() {
   const [students, setStudents] = useState<ApiStudent[]>([]);
@@ -18,7 +18,10 @@ export function AIReports() {
   const [result, setResult] = useState<AINarrativeResponse | null>(null);
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingSaved, setLoadingSaved] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -36,14 +39,33 @@ export function AIReports() {
   useEffect(() => {
     if (!year) { setTerms([]); setTerm(''); return; }
     listTerms({ academicYear: year })
-      .then((data) => setTerm((current) => data.some((item) => item.id === current) ? current : (data.find((item) => item.is_current)?.id || data[0]?.id || '')) || setTerms(data))
+      .then((data) => {
+        setTerms(data);
+        setTerm((current) => data.some((item) => item.id === current) ? current : (data.find((item) => item.is_current)?.id || data[0]?.id || ''));
+      })
       .catch((err) => setError(err instanceof Error ? err.message : 'Unable to load terms.'));
   }, [year]);
+
+  useEffect(() => {
+    if (!student || !year || !term) { setResult(null); return; }
+    let cancelled = false;
+    setLoadingSaved(true);
+    setError('');
+    listAINarrativeReports({ student, academicYear: year, term })
+      .then((data) => {
+        if (!cancelled) {
+          setResult(data.results[0] || null);
+          setEditing(false);
+        }
+      })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load the saved report.'); })
+      .finally(() => { if (!cancelled) setLoadingSaved(false); });
+    return () => { cancelled = true; };
+  }, [student, year, term]);
 
   const generate = async () => {
     setError('');
     setGenerating(true);
-    setResult(null);
     setEditing(false);
     try {
       setResult(await generateAINarrativeReport({ student, academicYear: year, term }));
@@ -59,6 +81,33 @@ export function AIReports() {
     setResult({ ...result, narrative: { ...result.narrative, [key]: value } });
   };
 
+  const saveReview = async () => {
+    if (!result) return;
+    setSaving(true);
+    setError('');
+    try {
+      setResult(await saveAINarrativeReport(result.id, result.narrative));
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save the reviewed report.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const publish = async () => {
+    if (!result) return;
+    setPublishing(true);
+    setError('');
+    try {
+      setResult(await publishAINarrativeReport(result.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to publish the report.');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   const selectedStudent = students.find((item) => item.id === student);
   const narrativeSections: Array<[keyof AINarrativeResponse['narrative'], string]> = [
     ['summary', 'Overall Progress'],
@@ -68,19 +117,27 @@ export function AIReports() {
     ['teacher_note', 'Teacher Review Note'],
   ];
 
+  const statusLabel = result?.status === 'PUBLISHED' ? 'Published' : result?.status === 'REVIEWED' ? 'Reviewed' : 'AI Draft · Review Required';
+
   return (
     <div>
       <PageHeader
         title="AI Student Reports"
-        description="Generate a grounded narrative from the learner's published academic records. Review and refine it before it becomes an official report."
-        actions={result ? <>
-          <Button variant="secondary" onClick={() => setEditing((value) => !value)}>
-            <PencilIcon className="h-4 w-4" /> {editing ? 'Done editing' : 'Edit draft'}
-          </Button>
+        description="Generate a grounded narrative from the learner's published academic records, review it, and publish the approved version."
+        actions={result ? <div className="flex flex-wrap gap-2">
+          {result.status !== 'PUBLISHED' && !editing && <Button variant="secondary" onClick={() => setEditing(true)}>
+            <PencilIcon className="h-4 w-4" /> Edit draft
+          </Button>}
+          {editing && <Button onClick={saveReview} disabled={saving}>
+            {saving ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <CheckCircle2Icon className="h-4 w-4" />} {saving ? 'Saving…' : 'Save & mark reviewed'}
+          </Button>}
+          {result.status === 'REVIEWED' && !editing && <Button onClick={publish} disabled={publishing}>
+            {publishing ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <SendIcon className="h-4 w-4" />} {publishing ? 'Publishing…' : 'Publish report'}
+          </Button>}
           <Button variant="secondary" onClick={() => window.print()}>
             <PrinterIcon className="h-4 w-4" /> Export PDF
           </Button>
-        </> : undefined}
+        </div> : undefined}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -105,18 +162,19 @@ export function AIReports() {
                 </select>
               </Field>
 
-              <Button className="w-full" onClick={generate} disabled={loading || generating || !student || !year || !term}>
+              <Button className="w-full" onClick={generate} disabled={loading || loadingSaved || generating || !student || !year || !term}>
                 {generating ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <SparklesIcon className="h-4 w-4" />}
                 {generating ? 'Generating…' : result ? 'Regenerate' : 'Generate AI Report'}
               </Button>
-              <p className="text-xs text-slate-400 text-center leading-relaxed">The model receives only the selected learner's report facts. The generated narrative is a draft and requires teacher review.</p>
+              <p className="text-xs text-slate-400 text-center leading-relaxed">The model receives only the selected learner's report facts. AI output is stored as a draft until an authorized staff member reviews it.</p>
               {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
             </div>
           </Card>
         </div>
 
         <div className="lg:col-span-2">
-          {!result && !generating && <Card><EmptyState icon="Sparkles" title="Ready when you are" description="Choose a student, academic year, and term, then generate a grounded growth narrative." /></Card>}
+          {loadingSaved && <Card className="p-10 flex flex-col items-center justify-center text-center"><Loader2Icon className="h-8 w-8 animate-spin text-brand-600 mb-4" /><p className="font-display font-bold text-slate-800 dark:text-slate-100">Checking saved report…</p></Card>}
+          {!result && !loadingSaved && !generating && <Card><EmptyState icon="Sparkles" title="Ready when you are" description="Choose a student, academic year, and term, then generate a grounded growth narrative." /></Card>}
           {generating && <Card className="p-10 flex flex-col items-center justify-center text-center"><SparklesIcon className="h-10 w-10 text-emerald-500 animate-pulse mb-4" /><p className="font-display font-bold text-slate-800 dark:text-slate-100">Building the narrative…</p><p className="text-sm text-slate-400 mt-1">Analyzing published assessments, attendance, competencies, and portfolio evidence.</p></Card>}
 
           {result && <Card className="overflow-hidden print:shadow-none">
@@ -126,7 +184,7 @@ export function AIReports() {
                   <p className="font-display font-extrabold text-xl">{result.facts.learner.first_name} — Learning Progress Report</p>
                   <p className="text-brand-100 text-sm mt-1">{result.facts.period.academic_year} · Term {result.facts.period.term} · {result.facts.learner.class}</p>
                 </div>
-                <Badge tone="emerald">AI Draft · Review Required</Badge>
+                <Badge tone={result.status === 'PUBLISHED' ? 'emerald' : result.status === 'REVIEWED' ? 'blue' : 'amber'}>{statusLabel}</Badge>
               </div>
             </div>
 
@@ -149,7 +207,7 @@ export function AIReports() {
               <div className="flex flex-wrap gap-2">{result.facts.competencies.map((item) => <span key={item.name} className="rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">{item.name}: {item.highest_level}</span>)}</div>
             </div>}
 
-            <div className="px-7 py-5 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400">Generated with {result.model}. This draft is grounded in published KEY records and must be reviewed by an authorized staff member before publication.</div>
+            <div className="px-7 py-5 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400">Generated with {result.model}. This report is grounded in published KEY records. Publication makes the reviewed narrative the official version for this learner and period.</div>
           </Card>}
         </div>
       </div>
