@@ -15,6 +15,7 @@ import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { ActivityFeed, MiniCalendar } from '../widgets/Widgets';
 import { assignments } from '../../lib/data';
+import { useApp } from '../../context/AppContext';
 const todaysClasses = [
 {
   time: '08:30',
@@ -62,11 +63,14 @@ const quickActions = [
 }];
 
 export function TeacherDashboard({ name }: {name: string;}) {
+  const { school } = useApp();
+  const schoolName = school?.name || 'your institution';
+
   return (
     <div>
       <PageHeader
         title={`Good morning, ${name.split(' ')[0]}`}
-        description="Your Ocean Class is ready. Here’s what needs your attention today."
+        description={`${schoolName} is ready. Here’s what needs your attention today.`}
         actions={
         <Button>
             <PlusIcon className="h-4 w-4" /> New observation
