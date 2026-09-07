@@ -33,6 +33,10 @@ class SchoolApiTests(APITestCase):
             first_name="Test",
             last_name="Student",
         )
+        self.unassociated_user = User.objects.create_user(
+            email="unassociated@example.com",
+            password="StrongPassword123!",
+        )
         self.student = Student.objects.create(
             user=self.student_user,
             school=self.school_a,
@@ -43,6 +47,7 @@ class SchoolApiTests(APITestCase):
         )
 
         self.list_url = reverse("school-list")
+        self.me_url = f"{self.list_url}me/"
 
     def test_school_list_requires_authentication(self):
         response = self.client.get(self.list_url)
@@ -104,3 +109,26 @@ class SchoolApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertFalse(School.objects.filter(short_name="UNAUTH").exists())
+
+    def test_student_can_get_their_school_from_me_endpoint(self):
+        self.client.force_authenticate(self.student_user)
+
+        response = self.client.get(self.me_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], str(self.school_a.id))
+        self.assertEqual(response.data["short_name"], "KEY")
+
+    def test_unassociated_user_cannot_get_school_context(self):
+        self.client.force_authenticate(self.unassociated_user)
+
+        response = self.client.get(self.me_url)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_does_not_get_single_school_context(self):
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get(self.me_url)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
