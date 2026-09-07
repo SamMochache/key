@@ -25,6 +25,7 @@ urlpatterns = [
     path("api/", include("apps.teachers.api_urls")),
     path("api/", include("apps.academics.api_urls")),
     path("api/", include("apps.enrollment.api_urls")),
+    path("api/", include("apps.timetables.api_urls")),
     path("api/", include("apps.lessons.api_urls")),
     path("api/", include("apps.attendance.api_urls")),
     path("api/", include("apps.assessments.api_urls")),
