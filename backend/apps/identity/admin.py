@@ -1,5 +1,6 @@
 from django import forms
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 
 from .models import User
@@ -65,7 +66,7 @@ class UserChangeForm(forms.ModelForm):
 
 
 @admin.register(User)
-class UserAdmin(admin.ModelAdmin):
+class UserAdmin(BaseUserAdmin):
     form = UserChangeForm
     add_form = UserCreationForm
 
@@ -114,7 +115,13 @@ class UserAdmin(admin.ModelAdmin):
         ),
         (
             "Permissions",
-            {"fields": ("groups", "user_permissions")},
+            {
+                "fields": (
+                    "is_superuser",
+                    "groups",
+                    "user_permissions",
+                )
+            },
         ),
         (
             "Metadata",
