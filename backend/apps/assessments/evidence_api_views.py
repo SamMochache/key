@@ -29,9 +29,7 @@ class EvidenceViewSet(viewsets.ModelViewSet):
 
         queryset = queryset.filter(submission__enrollment__student__school=school)
         if role == UserRole.STUDENT:
-            return queryset.filter(
-                submission__enrollment__student__user=self.request.user
-            )
+            return queryset.filter(submission__enrollment__student__user=self.request.user)
         return queryset
 
     def perform_create(self, serializer):
@@ -41,14 +39,22 @@ class EvidenceViewSet(viewsets.ModelViewSet):
         serializer.save(created_by=self.request.user)
 
     def perform_update(self, serializer):
+        self._ensure_staff_owner(serializer.instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._ensure_staff_owner(instance)
+        instance.delete()
+
+    def _ensure_staff_owner(self, instance):
         role = get_user_role(self.request.user)
         if role == UserRole.TEACHER:
             try:
                 teacher = self.request.user.teacher_profile
             except ObjectDoesNotExist as exc:
                 raise PermissionDenied("Teacher profile not found.") from exc
-            if serializer.instance.submission.assessment.teacher_id != teacher.id:
-                raise PermissionDenied("You can only edit evidence for your own assessments.")
-        elif role != UserRole.ADMIN:
-            raise PermissionDenied("Only teachers and administrators can edit evidence.")
-        serializer.save()
+            if instance.submission.assessment.teacher_id != teacher.id:
+                raise PermissionDenied("You can only manage evidence for your own assessments.")
+            return
+        if role != UserRole.ADMIN:
+            raise PermissionDenied("Only teachers and administrators can manage evidence.")
