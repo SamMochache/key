@@ -25,9 +25,8 @@ class AcademicYear(BaseModel):
 
     end_date = models.DateField()
 
-    is_current = models.BooleanField(
-        default=False,
-    )
+    is_current = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         db_table = "academic_years"
