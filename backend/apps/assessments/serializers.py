@@ -39,7 +39,15 @@ class AssessmentSerializer(serializers.ModelSerializer):
         user = getattr(request, "user", None)
         role = get_user_role(user)
 
+        lesson = attrs.get("lesson_session", getattr(self.instance, "lesson_session", None))
         teacher = attrs.get("teacher", getattr(self.instance, "teacher", None))
+
+        if lesson is not None and teacher is not None:
+            if lesson.timetable_entry.teacher_subject.teacher_id != teacher.id:
+                raise serializers.ValidationError({"teacher": "The assessment teacher must be the teacher assigned to this lesson."})
+            if lesson.timetable_entry.classroom.school_id != teacher.school_id:
+                raise serializers.ValidationError("The assessment lesson and teacher must belong to the same institution.")
+
         if role == UserRole.TEACHER:
             current_teacher = getattr(user, "teacher_profile", None)
             if teacher is not None and current_teacher is not None and teacher != current_teacher:
@@ -73,9 +81,7 @@ class AssessmentSubmissionSerializer(serializers.ModelSerializer):
             assessment_school_id = assessment.teacher.school_id
             enrollment_school_id = enrollment.student.school_id
             if assessment_school_id != enrollment_school_id:
-                raise serializers.ValidationError(
-                    "The assessment and enrollment must belong to the same institution."
-                )
+                raise serializers.ValidationError("The assessment and enrollment must belong to the same institution.")
 
         if role == UserRole.STUDENT:
             student = getattr(user, "student_profile", None)
@@ -93,10 +99,7 @@ class AssessmentSubmissionSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         user = getattr(request, "user", None)
         if get_user_role(user) == UserRole.STUDENT:
-            extra_kwargs.update({
-                "status": {"read_only": True},
-                "teacher_notes": {"read_only": True},
-            })
+            extra_kwargs.update({"status": {"read_only": True}, "teacher_notes": {"read_only": True}})
         return extra_kwargs
 
     class Meta:
@@ -114,27 +117,19 @@ class CriterionScoreSerializer(serializers.ModelSerializer):
         evaluation = attrs.get("evaluation", getattr(self.instance, "evaluation", None))
         criterion = attrs.get("criterion", getattr(self.instance, "criterion", None))
         score = attrs.get("score", getattr(self.instance, "score", None))
-
         if evaluation is not None and criterion is not None:
             assessment = evaluation.submission.assessment
             if not hasattr(assessment, "rubric") or criterion.rubric_id != assessment.rubric_id:
-                raise serializers.ValidationError(
-                    {"criterion": "The criterion must belong to the assessment rubric."}
-                )
-
+                raise serializers.ValidationError({"criterion": "The criterion must belong to the assessment rubric."})
         if score is not None and score < 0:
             raise serializers.ValidationError({"score": "Score cannot be negative."})
         if score is not None and criterion is not None and score > criterion.maximum_score:
             raise serializers.ValidationError({"score": "Score cannot exceed the criterion maximum."})
-
         request = self.context.get("request")
         user = getattr(request, "user", None)
         school = get_user_school(user)
-        if school is not None and evaluation is not None:
-            submission_school_id = evaluation.submission.enrollment.student.school_id
-            if submission_school_id != school.id:
-                raise serializers.ValidationError("You cannot score a submission from another institution.")
-
+        if school is not None and evaluation is not None and evaluation.submission.enrollment.student.school_id != school.id:
+            raise serializers.ValidationError("You cannot score a submission from another institution.")
         return attrs
 
     class Meta:
@@ -151,20 +146,13 @@ class CompetencyEvaluationSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         user = getattr(request, "user", None)
         school = get_user_school(user)
-        if school is not None and evaluation is not None:
-            submission_school_id = evaluation.submission.enrollment.student.school_id
-            if submission_school_id != school.id:
-                raise serializers.ValidationError(
-                    "You cannot evaluate a submission from another institution."
-                )
+        if school is not None and evaluation is not None and evaluation.submission.enrollment.student.school_id != school.id:
+            raise serializers.ValidationError("You cannot evaluate a submission from another institution.")
         return attrs
 
     class Meta:
         model = CompetencyEvaluation
-        fields = [
-            "id", "evaluation", "competency", "competency_name", "level",
-            "teacher_comment", "created_at", "updated_at",
-        ]
+        fields = ["id", "evaluation", "competency", "competency_name", "level", "teacher_comment", "created_at", "updated_at"]
         read_only_fields = ["created_at", "updated_at"]
 
 
@@ -180,23 +168,15 @@ class AssessmentEvaluationSerializer(serializers.ModelSerializer):
         submission = attrs.get("submission", getattr(self.instance, "submission", None))
         if submission is None:
             return attrs
-
         if self.instance is not None and submission != self.instance.submission:
             raise serializers.ValidationError({"submission": "An evaluation cannot be moved to another submission."})
-
         school = get_user_school(user)
         if school is not None and submission.enrollment.student.school_id != school.id:
-            raise serializers.ValidationError(
-                {"submission": "You cannot evaluate a submission from another institution."}
-            )
-
+            raise serializers.ValidationError({"submission": "You cannot evaluate a submission from another institution."})
         if role == UserRole.TEACHER:
             teacher = getattr(user, "teacher_profile", None)
             if teacher is not None and submission.assessment.teacher_id != teacher.id:
-                raise serializers.ValidationError(
-                    {"submission": "Teachers can only evaluate assessments assigned to them."}
-                )
-
+                raise serializers.ValidationError({"submission": "Teachers can only evaluate assessments assigned to them."})
         return attrs
 
     class Meta:
@@ -206,7 +186,4 @@ class AssessmentEvaluationSerializer(serializers.ModelSerializer):
             "narrative_feedback", "published", "published_at", "criterion_scores",
             "competency_evaluations", "created_at", "updated_at",
         ]
-        read_only_fields = [
-            "total_score", "percentage", "published", "published_at",
-            "created_at", "updated_at",
-        ]
+        read_only_fields = ["total_score", "percentage", "published", "published_at", "created_at", "updated_at"]
