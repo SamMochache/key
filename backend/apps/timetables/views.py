@@ -71,7 +71,7 @@ class TimetableViewSet(viewsets.ModelViewSet):
         )
         if not is_admin(self.request.user):
             school = user_school(self.request.user)
-            queryset = queryset.filter(school=school) if school else queryset.none()
+            queryset = queryset.filter(school=school, status=TimetableStatus.PUBLISHED) if school else queryset.none()
         for param, field in (
             ("school", "school_id"),
             ("academic_year", "academic_year_id"),
@@ -163,7 +163,7 @@ class TimetableEntryViewSet(viewsets.ModelViewSet):
         )
         if not is_admin(self.request.user):
             school = user_school(self.request.user)
-            queryset = queryset.filter(timetable__school=school) if school else queryset.none()
+            queryset = queryset.filter(timetable__school=school, timetable__status=TimetableStatus.PUBLISHED) if school else queryset.none()
         for param, field in (
             ("timetable", "timetable_id"),
             ("classroom", "classroom_id"),
