@@ -17,7 +17,7 @@ export const navGroups: NavGroup[] = [
     { label: 'Academics', to: '/academics', icon: 'BookOpen', roles: ['admin', 'teacher', 'student'] },
     { label: 'Lessons', to: '/lessons', icon: 'BookOpenCheck', roles: ['admin', 'teacher'] },
     { label: 'Timetables', to: '/timetables', icon: 'CalendarClock', roles: ['admin'] },
-    { label: 'Assessments', to: '/assessments', icon: 'ClipboardCheck', roles: ['admin', 'teacher'] },
+    { label: 'Assessments', to: '/assessments', icon: 'ClipboardCheck', roles: ['admin', 'teacher', 'student'] },
     { label: 'Evidence', to: '/evidence', icon: 'Files', roles: ALL },
     { label: 'AI Reports', to: '/ai-reports', icon: 'Sparkles', roles: ['admin', 'teacher'] },
     { label: 'My AI Reports', to: '/my-ai-reports', icon: 'FileText', roles: ['student'] },
