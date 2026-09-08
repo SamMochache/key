@@ -48,10 +48,16 @@ export function Evidence() {
         listSubmissions(),
         listEvidence(),
       ]);
-      setRole(user.role);
+      const resolvedRole = user.role;
+      setRole(resolvedRole);
       setSubmissions(submissionData);
       setEvidence(evidenceData);
-      if (!selectedSubmission && submissionData.length) setSelectedSubmission(submissionData[0].id);
+      // Students should see their complete evidence collection by default.
+      // Staff keep the convenient first-submission selection.
+      if (resolvedRole !== 'student' && !selectedSubmission && submissionData.length) {
+        setSelectedSubmission(submissionData[0].id);
+      }
+      if (resolvedRole === 'student') setSelectedSubmission('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load evidence.');
     } finally {
