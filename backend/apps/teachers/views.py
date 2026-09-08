@@ -1,4 +1,7 @@
 from rest_framework import permissions, viewsets
+from rest_framework.exceptions import PermissionDenied
+
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school
 
 from .models.department import Department
 from .models.teacher import Teacher
@@ -8,7 +11,7 @@ from .serializers import DepartmentSerializer, TeacherSerializer, TeacherSubject
 
 class InstitutionAdminPermission(permissions.BasePermission):
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser))
+        return bool(request.user and request.user.is_authenticated and get_user_role(request.user) == UserRole.ADMIN)
 
 
 class TeacherAccessPermission(permissions.BasePermission):
@@ -18,29 +21,17 @@ class TeacherAccessPermission(permissions.BasePermission):
         user = request.user
         if not user or not user.is_authenticated:
             return False
+        role = get_user_role(user)
         if request.method in permissions.SAFE_METHODS:
-            return self._is_admin(user) or self._user_school(user) is not None
-        return self._is_admin(user)
+            return role in {UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT}
+        return role == UserRole.ADMIN
 
     def has_object_permission(self, request, view, obj):
-        user = request.user
-        if self._is_admin(user):
-            return True
-        return request.method in permissions.SAFE_METHODS and obj.school_id == self._user_school_id(user)
-
-    @staticmethod
-    def _is_admin(user):
-        return bool(user.is_staff or user.is_superuser)
-
-    @staticmethod
-    def _user_school(user):
-        profile = getattr(user, "teacher_profile", None) or getattr(user, "student_profile", None)
-        return getattr(profile, "school", None)
-
-    @classmethod
-    def _user_school_id(cls, user):
-        school = cls._user_school(user)
-        return school.pk if school else None
+        role = get_user_role(request.user)
+        school = get_user_school(request.user)
+        if role == UserRole.ADMIN:
+            return school is None or obj.school_id == school.id
+        return request.method in permissions.SAFE_METHODS and school is not None and obj.school_id == school.id
 
 
 class TeacherViewSet(viewsets.ModelViewSet):
@@ -49,10 +40,10 @@ class TeacherViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Teacher.objects.select_related("user", "school", "department").all()
-        user = self.request.user
-        if not (user.is_staff or user.is_superuser):
-            school_id = TeacherAccessPermission._user_school_id(user)
-            queryset = queryset.filter(school_id=school_id) if school_id else queryset.none()
+        role = get_user_role(self.request.user)
+        school = get_user_school(self.request.user)
+        if role != UserRole.ADMIN or school is not None:
+            queryset = queryset.filter(school_id=school.id) if school else queryset.none()
         search = self.request.query_params.get("search", "").strip()
         if search:
             from django.db.models import Q
@@ -65,6 +56,19 @@ class TeacherViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(employment_type=employment_type)
         return queryset
 
+    def perform_create(self, serializer):
+        school = get_user_school(self.request.user)
+        if school is not None:
+            serializer.save(school=school)
+        else:
+            serializer.save()
+
+    def perform_update(self, serializer):
+        school = get_user_school(self.request.user)
+        if school is not None and serializer.instance.school_id != school.id:
+            raise PermissionDenied("The teacher does not belong to your institution.")
+        serializer.save()
+
 
 class DepartmentViewSet(viewsets.ModelViewSet):
     serializer_class = DepartmentSerializer
@@ -72,21 +76,29 @@ class DepartmentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Department.objects.select_related("school").all()
+        own_school = get_user_school(self.request.user)
+        if own_school is not None:
+            return queryset.filter(school_id=own_school.id)
         school = self.request.query_params.get("school")
         if school:
             queryset = queryset.filter(school_id=school)
         return queryset
+
+    def perform_create(self, serializer):
+        school = get_user_school(self.request.user)
+        if school is not None:
+            serializer.save(school=school)
+        else:
+            serializer.save()
 
 
 class TeacherSubjectAccessPermission(permissions.BasePermission):
     message = "You do not have permission to access teacher subject assignments."
 
     def has_permission(self, request, view):
-        user = request.user
-        if not user or not user.is_authenticated:
-            return False
-        profile = getattr(user, "teacher_profile", None) or getattr(user, "student_profile", None)
-        return bool(user.is_staff or user.is_superuser or profile is not None)
+        return bool(request.user and request.user.is_authenticated and get_user_role(request.user) in {
+            UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT
+        })
 
 
 class TeacherSubjectViewSet(viewsets.ReadOnlyModelViewSet):
@@ -98,9 +110,23 @@ class TeacherSubjectViewSet(viewsets.ReadOnlyModelViewSet):
             "teacher__user", "teacher__school", "subject", "classroom", "academic_year", "term"
         )
         user = self.request.user
-        if not (user.is_staff or user.is_superuser):
-            profile = getattr(user, "teacher_profile", None) or getattr(user, "student_profile", None)
-            queryset = queryset.filter(classroom__school_id=profile.school_id) if profile else queryset.none()
+        role = get_user_role(user)
+        school = get_user_school(user)
+
+        if role == UserRole.ADMIN:
+            if school is not None:
+                queryset = queryset.filter(classroom__school_id=school.id)
+        elif role == UserRole.TEACHER:
+            queryset = queryset.filter(teacher=user.teacher_profile)
+        elif role == UserRole.STUDENT:
+            queryset = queryset.filter(
+                classroom__enrollments__student=user.student_profile,
+                classroom__enrollments__academic_year=models.F("academic_year"),
+                classroom__enrollments__term=models.F("term"),
+            ).distinct()
+        else:
+            return queryset.none()
+
         for param, field in (
             ("school", "teacher__school_id"),
             ("classroom", "classroom_id"),
