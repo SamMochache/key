@@ -20,6 +20,11 @@ class SchoolViewSet(viewsets.ModelViewSet):
             teacher_count=Count("teachers", distinct=True),
         )
         user = self.request.user
+
+        admin_profile = getattr(user, "school_admin_profile", None)
+        if admin_profile is not None and admin_profile.is_active:
+            return queryset.filter(pk=admin_profile.school_id)
+
         if user.is_staff or user.is_superuser:
             return queryset
 
@@ -33,9 +38,14 @@ class SchoolViewSet(viewsets.ModelViewSet):
     def me(self, request):
         """Return the authenticated user's own institution."""
         user = request.user
+        admin_profile = getattr(user, "school_admin_profile", None)
+        if admin_profile is not None and admin_profile.is_active:
+            school = self.get_queryset().get(pk=admin_profile.school_id)
+            return Response(self.get_serializer(school).data)
+
         if user.is_staff or user.is_superuser:
             return Response(
-                {"detail": "Administrators do not have a single institution context."},
+                {"detail": "Platform administrators do not have a single institution context."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
