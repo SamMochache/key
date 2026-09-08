@@ -107,7 +107,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAuthStatus('unauthenticated');
   }, []);
 
-  const toggleDark = useCallback(() => setDark((d) => !d, []), []);
+  const toggleDark = useCallback(() => setDark((d) => !d), []);
 
   return (
     <AppContext.Provider value={{ role, user, school, schoolStatus, authStatus, refreshSession, logout, dark, toggleDark }}>
