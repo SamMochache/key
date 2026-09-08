@@ -2,7 +2,6 @@ from rest_framework.permissions import BasePermission
 
 
 class UserRole:
-    PLATFORM_ADMIN = "platform_admin"
     ADMIN = "admin"
     TEACHER = "teacher"
     PARENT = "parent"
@@ -18,7 +17,7 @@ def get_user_role(user):
     if school_admin is not None and school_admin.is_active:
         return UserRole.ADMIN
     if user.is_superuser or user.is_staff:
-        return UserRole.PLATFORM_ADMIN
+        return UserRole.ADMIN
     if hasattr(user, "teacher_profile"):
         return UserRole.TEACHER
     if hasattr(user, "parent_profile"):
@@ -29,11 +28,15 @@ def get_user_role(user):
 
 
 def get_user_school(user):
-    """Return the institution associated with an institution-scoped user."""
+    """Return the institution associated with an institution-scoped user.
+
+    Platform staff/superusers intentionally have no single school context; an
+    institution administrator resolves through ``school_admin_profile``.
+    """
+    school_admin = getattr(user, "school_admin_profile", None)
+    if school_admin is not None and school_admin.is_active:
+        return school_admin.school
     role = get_user_role(user)
-    if role == UserRole.ADMIN:
-        profile = getattr(user, "school_admin_profile", None)
-        return profile.school if profile is not None and profile.is_active else None
     if role == UserRole.TEACHER:
         return user.teacher_profile.school
     if role == UserRole.PARENT:
@@ -45,12 +48,12 @@ def get_user_school(user):
 
 class AdminOnly(BasePermission):
     def has_permission(self, request, view):
-        return get_user_role(request.user) in {UserRole.ADMIN, UserRole.PLATFORM_ADMIN}
+        return get_user_role(request.user) == UserRole.ADMIN
 
 
 class TeacherOrAdmin(BasePermission):
     def has_permission(self, request, view):
-        return get_user_role(request.user) in {UserRole.ADMIN, UserRole.PLATFORM_ADMIN, UserRole.TEACHER}
+        return get_user_role(request.user) in {UserRole.ADMIN, UserRole.TEACHER}
 
 
 class AssessmentAccessPermission(BasePermission):
@@ -58,7 +61,7 @@ class AssessmentAccessPermission(BasePermission):
 
     def has_permission(self, request, view):
         role = get_user_role(request.user)
-        if role in {UserRole.ADMIN, UserRole.PLATFORM_ADMIN, UserRole.TEACHER}:
+        if role in {UserRole.ADMIN, UserRole.TEACHER}:
             return True
         return role == UserRole.STUDENT and request.method in {"GET", "HEAD", "OPTIONS"}
 
@@ -68,7 +71,7 @@ class SubmissionAccessPermission(BasePermission):
 
     def has_permission(self, request, view):
         role = get_user_role(request.user)
-        if role in {UserRole.ADMIN, UserRole.PLATFORM_ADMIN, UserRole.TEACHER}:
+        if role in {UserRole.ADMIN, UserRole.TEACHER}:
             return True
         return role == UserRole.STUDENT and request.method in {
             "GET", "POST", "PUT", "PATCH", "HEAD", "OPTIONS"
@@ -79,4 +82,4 @@ class EvaluationAccessPermission(BasePermission):
     """Only teachers/admins can create, edit, or publish evaluations."""
 
     def has_permission(self, request, view):
-        return get_user_role(request.user) in {UserRole.ADMIN, UserRole.PLATFORM_ADMIN, UserRole.TEACHER}
+        return get_user_role(request.user) in {UserRole.ADMIN, UserRole.TEACHER}
