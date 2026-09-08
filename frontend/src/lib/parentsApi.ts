@@ -23,6 +23,38 @@ export interface ApiParent {
   students: ParentStudentLink[];
 }
 
+export interface ParentDashboardChild {
+  id: string;
+  full_name: string;
+  first_name: string;
+  initials: string;
+  profile_photo: string | null;
+  admission_number: string;
+  date_of_birth: string;
+  age: number;
+  school: string;
+  school_name: string;
+  relationship: string;
+  can_view_reports: boolean;
+  is_primary_contact: boolean;
+  classroom: null | {
+    id: string;
+    name: string;
+    academic_year: string;
+    term: number;
+    status: string;
+  };
+  attendance_rate: number | null;
+  growth_index: number | null;
+  latest_portfolio: null | {
+    id: string;
+    title: string;
+    description: string;
+    event_date: string;
+    item_type: string;
+  };
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
@@ -43,6 +75,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export async function listParents(search?: string) {
   const suffix = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
   return request<{ results: ApiParent[] }>(`/parents/${suffix}`);
+}
+
+export async function listMyChildren() {
+  return request<{ results: ParentDashboardChild[] }>('/parents/me/children/');
 }
 
 export async function createParent(payload: {
