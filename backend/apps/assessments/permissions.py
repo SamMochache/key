@@ -13,6 +13,9 @@ def get_user_role(user):
     """Resolve the application role from the user's profile relationships."""
     if not user or not user.is_authenticated:
         return UserRole.USER
+    school_admin = getattr(user, "school_admin_profile", None)
+    if school_admin is not None and school_admin.is_active:
+        return UserRole.ADMIN
     if user.is_superuser or user.is_staff:
         return UserRole.ADMIN
     if hasattr(user, "teacher_profile"):
@@ -25,7 +28,14 @@ def get_user_role(user):
 
 
 def get_user_school(user):
-    """Return the school associated with a teacher, parent, or student."""
+    """Return the institution associated with an institution-scoped user.
+
+    Platform staff/superusers intentionally have no single school context; an
+    institution administrator resolves through ``school_admin_profile``.
+    """
+    school_admin = getattr(user, "school_admin_profile", None)
+    if school_admin is not None and school_admin.is_active:
+        return school_admin.school
     role = get_user_role(user)
     if role == UserRole.TEACHER:
         return user.teacher_profile.school

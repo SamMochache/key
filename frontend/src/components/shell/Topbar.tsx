@@ -2,11 +2,17 @@ import React, { useEffect, useState, useRef } from 'react';
 import { MenuIcon, BellIcon, SunIcon, MoonIcon, ChevronDownIcon, SettingsIcon, LogOutIcon, UserIcon, Loader2Icon } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useApp } from '../../context/AppContext';
-import { PROFILES, ROLE_LABELS } from '../../lib/data';
 import { Avatar } from '../ui/Avatar';
 import { GlobalSearch } from './GlobalSearch';
 import { cn } from '../../lib/utils';
 import { listNotifications, markAllNotificationsRead, markNotificationRead, type NotificationItem } from '../../lib/notificationsApi';
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Administrator',
+  teacher: 'Teacher',
+  parent: 'Parent',
+  student: 'Student',
+};
 
 function useOutside(cb: () => void) {
   const ref = useRef<HTMLDivElement>(null);
@@ -16,7 +22,6 @@ function useOutside(cb: () => void) {
 
 export function Topbar({ onMenu }: { onMenu: () => void }) {
   const { role, user, logout, dark, toggleDark } = useApp();
-  const profile = PROFILES[role];
   const [notifOpen, setNotifOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -25,7 +30,8 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   const [notifError, setNotifError] = useState('');
   const notifRef = useOutside(() => setNotifOpen(false));
   const menuRef = useOutside(() => setMenuOpen(false));
-  const displayName = user?.full_name || profile.name;
+  const displayName = user?.full_name || user?.email || 'KEY user';
+  const profilePhoto = (user as (typeof user & { profile_photo?: string | null }))?.profile_photo || undefined;
 
   const loadNotifications = () => {
     setNotifLoading(true); setNotifError('');
@@ -52,8 +58,8 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
           </div>
         </motion.div>}</AnimatePresence>
       </div>
-      <div className="relative pl-1" ref={menuRef}><button onClick={() => setMenuOpen(o => !o)} className="flex items-center gap-2 rounded-2xl p-1 pr-2 hover:bg-slate-100 dark:hover:bg-slate-800"><Avatar src={profile.avatar} name={displayName} size={34} ring /><span className="hidden sm:block text-left leading-tight"><span className="block text-sm font-bold text-slate-800 dark:text-slate-100">{displayName}</span><span className="block text-[11px] text-slate-400">{ROLE_LABELS[role]}</span></span><ChevronDownIcon className="h-4 w-4 text-slate-400 hidden sm:block" /></button>
-        <AnimatePresence>{menuOpen && <motion.div initial={{ opacity: 0, y: 6, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: .98 }} className="absolute right-0 mt-2 w-72 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-softlg overflow-hidden"><div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-800"><Avatar src={profile.avatar} name={displayName} size={44} /><div className="min-w-0"><p className="font-bold text-slate-800 dark:text-slate-100 truncate">{displayName}</p><p className="text-xs text-slate-400 truncate">{ROLE_LABELS[role]}</p></div></div><div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800"><p className="px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Signed in as</p><p className="px-2 py-1 text-sm text-slate-600 dark:text-slate-300 truncate">{user?.email}</p></div><div className="px-3 pb-3 pt-2 space-y-0.5"><MenuRow icon={<UserIcon className="h-4 w-4" />} label="My Profile" /><MenuRow icon={<SettingsIcon className="h-4 w-4" />} label="Settings" /><MenuRow icon={<LogOutIcon className="h-4 w-4" />} label="Sign out" danger onClick={logout} /></div></motion.div>}</AnimatePresence>
+      <div className="relative pl-1" ref={menuRef}><button onClick={() => setMenuOpen(o => !o)} className="flex items-center gap-2 rounded-2xl p-1 pr-2 hover:bg-slate-100 dark:hover:bg-slate-800"><Avatar src={profilePhoto} name={displayName} size={34} ring /><span className="hidden sm:block text-left leading-tight"><span className="block text-sm font-bold text-slate-800 dark:text-slate-100">{displayName}</span><span className="block text-[11px] text-slate-400">{ROLE_LABELS[role] || role}</span></span><ChevronDownIcon className="h-4 w-4 text-slate-400 hidden sm:block" /></button>
+        <AnimatePresence>{menuOpen && <motion.div initial={{ opacity: 0, y: 6, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: .98 }} className="absolute right-0 mt-2 w-72 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-softlg overflow-hidden"><div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-800"><Avatar src={profilePhoto} name={displayName} size={44} /><div className="min-w-0"><p className="font-bold text-slate-800 dark:text-slate-100 truncate">{displayName}</p><p className="text-xs text-slate-400 truncate">{ROLE_LABELS[role] || role}</p></div></div><div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800"><p className="px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Signed in as</p><p className="px-2 py-1 text-sm text-slate-600 dark:text-slate-300 truncate">{user?.email}</p></div><div className="px-3 pb-3 pt-2 space-y-0.5"><MenuRow icon={<UserIcon className="h-4 w-4" />} label="My Profile" /><MenuRow icon={<SettingsIcon className="h-4 w-4" />} label="Settings" /><MenuRow icon={<LogOutIcon className="h-4 w-4" />} label="Sign out" danger onClick={logout} /></div></motion.div>}</AnimatePresence>
       </div>
     </div>
   </header>;

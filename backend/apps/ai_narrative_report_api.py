@@ -20,6 +20,7 @@ from apps.assessments.permissions import UserRole, get_user_role, get_user_schoo
 from apps.attendance.models import AttendanceRecord
 from apps.enrollment.models import Enrollment
 from apps.portfolio.models import PortfolioItem
+from core.constants.enrollment import EnrollmentStatus
 
 
 LEVEL_ORDER = {"BEGINNING": 1, "DEVELOPING": 2, "PROFICIENT": 3, "ADVANCED": 4}
@@ -29,6 +30,13 @@ LEVEL_LABELS = {
     "PROFICIENT": "Proficient",
     "ADVANCED": "Advanced",
 }
+REPORTABLE_ENROLLMENT_STATUSES = [
+    EnrollmentStatus.ENROLLED,
+    EnrollmentStatus.PROMOTED,
+    EnrollmentStatus.TRANSFERRED,
+    EnrollmentStatus.WITHDRAWN,
+    EnrollmentStatus.GRADUATED,
+]
 
 
 class AIRuntimeError(Exception):
@@ -295,7 +303,7 @@ class AINarrativeReportView(views.APIView):
             student_id=student_id,
             academic_year_id=year.id,
             term_id=term.id,
-            status__in=["ACTIVE", "COMPLETED"],
+            status__in=REPORTABLE_ENROLLMENT_STATUSES,
         ).first()
         if enrollment is None:
             return JsonResponse({"detail": "The student is not enrolled in the selected academic period."}, status=404)

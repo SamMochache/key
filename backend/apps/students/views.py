@@ -1,5 +1,7 @@
 from rest_framework import permissions, viewsets
 
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+
 from .models import Student
 from .serializers import StudentSerializer
 
@@ -11,44 +13,37 @@ class StudentAccessPermission(permissions.BasePermission):
         user = request.user
         if not user or not user.is_authenticated:
             return False
-
+        role = get_user_role(user)
         if request.method in permissions.SAFE_METHODS:
-            return self._is_admin(user) or self._user_school(user) is not None
-
-        return self._is_admin(user) or getattr(user, "teacher_profile", None) is not None
+            return role in {UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT}
+        return role in {UserRole.ADMIN, UserRole.TEACHER}
 
     def has_object_permission(self, request, view, obj):
         user = request.user
-        if self._is_admin(user):
+        role = get_user_role(user)
+        school = get_user_school(user)
+
+        if role == UserRole.ADMIN:
+            return school is None or obj.school_id == school.id
+
+        if role == UserRole.STUDENT:
+            return request.method in permissions.SAFE_METHODS and obj.pk == user.student_profile.pk
+
+        if role == UserRole.TEACHER:
+            if obj.school_id != user.teacher_profile.school_id:
+                return False
+            if request.method not in permissions.SAFE_METHODS:
+                return obj.enrollments.filter(
+                    classroom__teacher_subjects__teacher=user.teacher_profile,
+                    classroom__teacher_subjects__is_active=True,
+                ).exists()
             return True
-
-        student_profile = getattr(user, "student_profile", None)
-        if student_profile is not None:
-            return request.method in permissions.SAFE_METHODS and obj.pk == student_profile.pk
-
-        teacher_profile = getattr(user, "teacher_profile", None)
-        if teacher_profile is not None:
-            return obj.school_id == teacher_profile.school_id
 
         return False
 
-    @staticmethod
-    def _is_admin(user):
-        return bool(user.is_staff or user.is_superuser)
-
-    @staticmethod
-    def _user_school(user):
-        teacher_profile = getattr(user, "teacher_profile", None)
-        if teacher_profile is not None:
-            return teacher_profile.school
-        student_profile = getattr(user, "student_profile", None)
-        if student_profile is not None:
-            return student_profile.school
-        return None
-
 
 class StudentViewSet(viewsets.ModelViewSet):
-    """Student directory with strict institution-level tenant isolation."""
+    """Student directory with institution and teacher-assignment isolation."""
 
     serializer_class = StudentSerializer
     permission_classes = [StudentAccessPermission]
@@ -56,19 +51,22 @@ class StudentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = Student.objects.select_related("user", "school").all()
         user = self.request.user
+        role = get_user_role(user)
+        school = get_user_school(user)
 
-        if user.is_staff or user.is_superuser:
-            return queryset
-
-        teacher_profile = getattr(user, "teacher_profile", None)
-        if teacher_profile is not None:
-            queryset = queryset.filter(school_id=teacher_profile.school_id)
+        if role == UserRole.ADMIN:
+            if school is not None:
+                queryset = queryset.filter(school_id=school.id)
+        elif role == UserRole.TEACHER:
+            queryset = queryset.filter(
+                school_id=user.teacher_profile.school_id,
+                enrollments__classroom__teacher_subjects__teacher=user.teacher_profile,
+                enrollments__classroom__teacher_subjects__is_active=True,
+            ).distinct()
+        elif role == UserRole.STUDENT:
+            queryset = queryset.filter(pk=user.student_profile.pk)
         else:
-            student_profile = getattr(user, "student_profile", None)
-            if student_profile is not None:
-                queryset = queryset.filter(pk=student_profile.pk)
-            else:
-                return queryset.none()
+            return queryset.none()
 
         search = self.request.query_params.get("search", "").strip()
         if search:
