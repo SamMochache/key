@@ -6,8 +6,9 @@ from rest_framework.test import APITestCase
 
 from apps.identity.models import User
 from apps.schools.models import School
+from apps.enrollment.models import Enrollment
 
-from .models import AcademicYear, CambridgeStage, Classroom, Curriculum, Programme, Subject, Term
+from .models import AcademicYear, CambridgeStage, Classroom, Curriculum, Programme, StageSubject, Subject, Term
 
 
 class AcademicsApiTests(APITestCase):
@@ -24,7 +25,7 @@ class AcademicsApiTests(APITestCase):
         )
         from apps.students.models import Student
 
-        Student.objects.create(
+        self.student = Student.objects.create(
             user=self.student_user,
             school=self.school_a,
             admission_number="A-001",
@@ -45,6 +46,12 @@ class AcademicsApiTests(APITestCase):
             curriculum=curriculum,
             name="Mathematics",
             code="MATH",
+            is_core=True,
+        )
+        StageSubject.objects.create(
+            cambridge_stage=self.stage,
+            subject=self.subject,
+            weekly_lessons=5,
             is_core=True,
         )
         self.year_a = AcademicYear.objects.create(
@@ -93,6 +100,13 @@ class AcademicsApiTests(APITestCase):
             code="FOREST",
             capacity=25,
         )
+        Enrollment.objects.create(
+            student=self.student,
+            classroom=self.class_a,
+            academic_year=self.year_a,
+            term=self.term_a,
+            enrollment_date=date(2026, 1, 1),
+        )
 
     def test_classroom_list_requires_authentication(self):
         response = self.client.get(reverse("classroom-list"))
@@ -104,7 +118,7 @@ class AcademicsApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 2)
 
-    def test_student_only_sees_classrooms_in_their_school(self):
+    def test_student_only_sees_enrolled_classrooms(self):
         self.client.force_authenticate(self.student_user)
         response = self.client.get(reverse("classroom-list"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
