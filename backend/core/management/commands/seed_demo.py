@@ -5,23 +5,33 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from apps.academics.models import AcademicYear, CambridgeStage, Classroom, Curriculum, Programme, StageSubject, Subject, Term
+from apps.academics.models import (
+    AcademicYear,
+    CambridgeStage,
+    Classroom,
+    ClassroomTeacherAssignment,
+    Curriculum,
+    Programme,
+    StageSubject,
+    Subject,
+    Term,
+)
 from apps.assessments.models import Assessment, AssessmentEvaluation, AssessmentSubmission
 from apps.attendance.models import AttendanceRecord, AttendanceRegister
 from apps.enrollment.models import Enrollment
 from apps.identity.models import User
 from apps.lessons.models import LessonSession
 from apps.schools.models import School, SchoolAdministrator
-from apps.teachers.models import ClassroomAssignment, Department, Teacher, TeacherSubject
+from apps.teachers.models import Department, Teacher, TeacherSubject
 from apps.timetables.models import Period, Timetable, TimetableEntry
+from apps.students.models import Student
 from core.constants.assessment import AssessmentStatus, AssessmentType, SubmissionStatus
 from core.constants.attendance import AttendanceStatus, RegisterStatus
 from core.constants.enrollment import EnrollmentStatus
 from core.constants.lesson import LessonStatus
 from core.constants.student import Gender
-from core.constants.teacher import ClassroomRole, EmploymentType, TeacherRole, TeacherStatus
+from core.constants.teacher import TeacherRole, EmploymentType, TeacherStatus
 from core.constants.timetable import TimetableStatus, WeekDay
-from apps.students.models import Student
 
 
 DEMO_SCHOOL = "Nairobi International Montessori & STEM Academy"
@@ -285,6 +295,7 @@ class Command(BaseCommand):
             "english": [("G1", "ENG"), ("G3", "ENG"), ("G5", "ENG")],
             "montessori": [("PP1", "MPL"), ("PP1", "ENG"), ("G1", "ART")],
         }
+        homerooms = {"math": "G1", "science": "G3", "english": "G5", "montessori": "PP1"}
         for term in terms:
             for teacher_key, pairs in mapping.items():
                 teacher = teachers[teacher_key]
@@ -298,15 +309,11 @@ class Command(BaseCommand):
                         term=term,
                         defaults={"role": TeacherRole.LEAD, "start_date": term.start_date, "is_active": True},
                     )
-                # Homeroom ownership makes teacher/class isolation obvious.
-                homeroom_code = {"math": "G1", "science": "G3", "english": "G5", "montessori": "PP1"}[teacher_key]
-                ClassroomAssignment.objects.update_or_create(
+                ClassroomTeacherAssignment.objects.update_or_create(
                     teacher=teacher,
-                    classroom=classrooms[(term.term_number, homeroom_code)],
-                    academic_year=year,
-                    term=term,
-                    role=ClassroomRole.HOMEROOM,
-                    defaults={"start_date": term.start_date, "is_active": True},
+                    classroom=classrooms[(term.term_number, homerooms[teacher_key])],
+                    role=ClassroomTeacherAssignment.Role.PRIMARY,
+                    defaults={"is_active": True},
                 )
 
     def seed_students(self, school):
@@ -341,7 +348,6 @@ class Command(BaseCommand):
         return students
 
     def seed_enrollments(self, students, classrooms, year, terms):
-        # Each term has the same class cohort so the current-term views have stable data.
         cohorts = ["PP1", "G1", "G3", "G5"]
         enrollments = {}
         for term in terms:
@@ -489,7 +495,6 @@ class Command(BaseCommand):
         demo_teachers = Teacher.objects.filter(user__in=demo_users)
         demo_school = School.objects.filter(short_name=DEMO_SHORT_NAME).first()
 
-        # Delete in dependency order. Only records tied to the explicit demo marker are touched.
         AssessmentEvaluation.objects.filter(submission__enrollment__student__in=demo_students).delete()
         AssessmentSubmission.objects.filter(enrollment__student__in=demo_students).delete()
         Assessment.objects.filter(lesson_session__timetable_entry__classroom__school=demo_school).delete()
@@ -499,7 +504,7 @@ class Command(BaseCommand):
         TimetableEntry.objects.filter(timetable__school=demo_school).delete()
         Timetable.objects.filter(school=demo_school).delete()
         TeacherSubject.objects.filter(teacher__in=demo_teachers).delete()
-        ClassroomAssignment.objects.filter(teacher__in=demo_teachers).delete()
+        ClassroomTeacherAssignment.objects.filter(teacher__in=demo_teachers).delete()
         Enrollment.objects.filter(student__in=demo_students).delete()
         Student.objects.filter(pk__in=demo_students.values("pk")).delete()
         Teacher.objects.filter(pk__in=demo_teachers.values("pk")).delete()
@@ -511,7 +516,6 @@ class Command(BaseCommand):
         if demo_school:
             demo_school.delete()
 
-        # The curriculum is uniquely named and belongs only to this seed.
         Curriculum.objects.filter(name="KEY Demo Curriculum").delete()
         User.objects.filter(email__endswith=DEMO_DOMAIN).delete()
         self.stdout.write(self.style.WARNING("Existing KEY demo dataset removed."))
