@@ -11,7 +11,8 @@ from apps.notifications.models import Notification
 from apps.parents.models import Parent, ParentStudentRelationship
 from apps.schools.models import School
 from apps.students.models import Student
-from apps.teachers.models import Department, Teacher
+from apps.teachers.models.department import Department
+from apps.teachers.models.teacher import Teacher
 from core.constants.student import Gender
 from core.constants.teacher import EmploymentType, TeacherStatus
 
