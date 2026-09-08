@@ -72,9 +72,11 @@ class AssessmentViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
                 student = self.request.user.student_profile
             except ObjectDoesNotExist as exc:
                 raise PermissionDenied("Student profile not found.") from exc
+            # LessonSession belongs to a TimetableEntry, which owns the classroom.
+            # There is no direct LessonSession.classroom relationship.
             return queryset.filter(
                 status="PUBLISHED",
-                lesson_session__classroom__enrollments__student=student,
+                lesson_session__timetable_entry__classroom__enrollments__student=student,
             ).distinct()
         return self.filter_school(queryset, "teacher__school")
 
@@ -273,9 +275,11 @@ class DashboardSummaryView(SchoolScopedQuerysetMixin, viewsets.ViewSet):
             students = students.filter(user=request.user)
             submissions = submissions.filter(enrollment__student__user=request.user)
             evaluations = evaluations.filter(submission__enrollment__student__user=request.user)
+            # Keep the same LessonSession -> TimetableEntry -> Classroom traversal
+            # used by AssessmentViewSet so student dashboard counts match the list API.
             assessments = assessments.filter(
                 status="PUBLISHED",
-                lesson_session__classroom__enrollments__student__user=request.user,
+                lesson_session__timetable_entry__classroom__enrollments__student__user=request.user,
             ).distinct()
         elif school is not None:
             students = students.filter(school=school)
