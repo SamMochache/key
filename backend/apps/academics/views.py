@@ -29,6 +29,13 @@ def is_admin(user):
     return bool(user.is_staff or user.is_superuser)
 
 
+def student_classrooms(user):
+    student = getattr(user, "student_profile", None)
+    if student is None:
+        return Classroom.objects.none()
+    return Classroom.objects.filter(enrollments__student=student, enrollments__status="ENROLLED").distinct()
+
+
 class AcademicsAccessPermission(permissions.BasePermission):
     message = "You do not have permission to access academic data."
 
@@ -56,7 +63,12 @@ class AcademicYearViewSet(SchoolScopedViewSet):
 
     def get_queryset(self):
         queryset = AcademicYear.objects.select_related("school").all()
-        queryset = self.filter_school(queryset)
+        if is_admin(self.request.user):
+            queryset = self.filter_school(queryset)
+        elif getattr(self.request.user, "student_profile", None) is not None:
+            queryset = queryset.filter(classrooms__enrollments__student=self.request.user.student_profile).distinct()
+        else:
+            queryset = self.filter_school(queryset)
         if self.request.query_params.get("current") in {"1", "true", "True"}:
             queryset = queryset.filter(is_current=True)
         return queryset
@@ -73,10 +85,17 @@ class TermViewSet(SchoolScopedViewSet):
 
     def get_queryset(self):
         queryset = Term.objects.select_related("academic_year", "academic_year__school").all()
-        if not is_admin(self.request.user):
+        if is_admin(self.request.user):
+            queryset = self.filter_school(queryset)
+        elif getattr(self.request.user, "student_profile", None) is not None:
+            queryset = queryset.filter(classrooms__enrollments__student=self.request.user.student_profile).distinct()
+        else:
             queryset = queryset.filter(academic_year__school=user_school(self.request.user))
         if self.request.query_params.get("current") in {"1", "true", "True"}:
             queryset = queryset.filter(is_current=True)
+        academic_year = self.request.query_params.get("academic_year")
+        if academic_year:
+            queryset = queryset.filter(academic_year_id=academic_year)
         return queryset
 
 
@@ -85,7 +104,11 @@ class CurriculumViewSet(viewsets.ModelViewSet):
     permission_classes = [AcademicsAccessPermission]
 
     def get_queryset(self):
-        return Curriculum.objects.annotate(subject_count=Count("subjects", distinct=True)).all()
+        queryset = Curriculum.objects.annotate(subject_count=Count("subjects", distinct=True)).all()
+        if not is_admin(self.request.user) and getattr(self.request.user, "student_profile", None) is not None:
+            stages = student_classrooms(self.request.user).values("cambridge_stage_id")
+            queryset = queryset.filter(subjects__stage_subjects__cambridge_stage_id__in=stages).distinct()
+        return queryset
 
 
 class SubjectViewSet(viewsets.ModelViewSet):
@@ -94,6 +117,9 @@ class SubjectViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Subject.objects.select_related("curriculum").all()
+        if not is_admin(self.request.user) and getattr(self.request.user, "student_profile", None) is not None:
+            stages = student_classrooms(self.request.user).values("cambridge_stage_id")
+            queryset = queryset.filter(stage_subjects__cambridge_stage_id__in=stages).distinct()
         curriculum = self.request.query_params.get("curriculum")
         if curriculum:
             queryset = queryset.filter(curriculum_id=curriculum)
@@ -111,6 +137,8 @@ class CambridgeStageViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = CambridgeStage.objects.all()
+        if not is_admin(self.request.user) and getattr(self.request.user, "student_profile", None) is not None:
+            queryset = queryset.filter(classrooms__enrollments__student=self.request.user.student_profile).distinct()
         if self.request.query_params.get("active") in {"1", "true", "True"}:
             queryset = queryset.filter(is_active=True)
         return queryset
@@ -122,6 +150,8 @@ class MontessoriLevelViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = MontessoriLevel.objects.all()
+        if not is_admin(self.request.user) and getattr(self.request.user, "student_profile", None) is not None:
+            queryset = queryset.filter(classrooms__enrollments__student=self.request.user.student_profile).distinct()
         if self.request.query_params.get("active") in {"1", "true", "True"}:
             queryset = queryset.filter(is_active=True)
         return queryset
@@ -133,6 +163,8 @@ class StageSubjectViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = StageSubject.objects.select_related("cambridge_stage", "subject").all()
+        if not is_admin(self.request.user) and getattr(self.request.user, "student_profile", None) is not None:
+            queryset = queryset.filter(cambridge_stage__classrooms__enrollments__student=self.request.user.student_profile).distinct()
         stage = self.request.query_params.get("stage")
         if stage:
             queryset = queryset.filter(cambridge_stage_id=stage)
@@ -147,9 +179,7 @@ class ClassroomViewSet(SchoolScopedViewSet):
     def get_queryset(self):
         queryset = (
             Classroom.objects
-            .select_related(
-                "school", "academic_year", "term", "cambridge_stage", "montessori_level"
-            )
+            .select_related("school", "academic_year", "term", "cambridge_stage", "montessori_level")
             .prefetch_related(
                 Prefetch(
                     "teacher_assignments",
@@ -160,20 +190,15 @@ class ClassroomViewSet(SchoolScopedViewSet):
                 )
             )
             .annotate(
-                student_count=Count(
-                    "enrollments__student",
-                    filter=Q(enrollments__status="ENROLLED"),
-                    distinct=True,
-                ),
-                subject_count=Count(
-                    "cambridge_stage__stage_subjects",
-                    filter=Q(cambridge_stage__stage_subjects__is_active=True),
-                    distinct=True,
-                ),
+                student_count=Count("enrollments__student", filter=Q(enrollments__status="ENROLLED"), distinct=True),
+                subject_count=Count("cambridge_stage__stage_subjects", filter=Q(cambridge_stage__stage_subjects__is_active=True), distinct=True),
             )
             .all()
         )
-        queryset = self.filter_school(queryset)
+        if not is_admin(self.request.user) and getattr(self.request.user, "student_profile", None) is not None:
+            queryset = queryset.filter(enrollments__student=self.request.user.student_profile, enrollments__status="ENROLLED").distinct()
+        else:
+            queryset = self.filter_school(queryset)
         academic_year = self.request.query_params.get("academic_year")
         term = self.request.query_params.get("term")
         stage = self.request.query_params.get("stage")
