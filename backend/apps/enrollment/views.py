@@ -1,43 +1,38 @@
 from django.db.models import Q
 from rest_framework import permissions, viewsets
+from rest_framework.exceptions import PermissionDenied
+
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from core.constants.enrollment import EnrollmentStatus
 
 from .models import Enrollment
 from .serializers import EnrollmentSerializer
-
-
-def user_school_id(user):
-    teacher = getattr(user, "teacher_profile", None)
-    if teacher is not None:
-        return teacher.school_id
-    student = getattr(user, "student_profile", None)
-    if student is not None:
-        return student.school_id
-    return None
-
-
-def is_admin(user):
-    return bool(user.is_staff or user.is_superuser)
 
 
 class EnrollmentAccessPermission(permissions.BasePermission):
     message = "You do not have permission to access enrollment data."
 
     def has_permission(self, request, view):
-        user = request.user
-        if not user or not user.is_authenticated:
+        if not request.user or not request.user.is_authenticated:
             return False
+        role = get_user_role(request.user)
         if request.method in permissions.SAFE_METHODS:
-            return is_admin(user) or user_school_id(user) is not None
-        return is_admin(user) or getattr(user, "teacher_profile", None) is not None
+            return role in {UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT}
+        return role == UserRole.ADMIN
 
     def has_object_permission(self, request, view, obj):
-        if is_admin(request.user):
-            return True
-        school_id = user_school_id(request.user)
-        if request.method in permissions.SAFE_METHODS:
-            return obj.classroom.school_id == school_id
-        teacher = getattr(request.user, "teacher_profile", None)
-        return teacher is not None and obj.classroom.school_id == teacher.school_id
+        role = get_user_role(request.user)
+        school = get_user_school(request.user)
+        if role == UserRole.ADMIN:
+            return school is None or obj.classroom.school_id == school.id
+        if role == UserRole.STUDENT:
+            return request.method in permissions.SAFE_METHODS and obj.student_id == request.user.student_profile.id
+        if role == UserRole.TEACHER:
+            return request.method in permissions.SAFE_METHODS and obj.classroom.teacher_subjects.filter(
+                teacher=request.user.teacher_profile,
+                is_active=True,
+            ).exists()
+        return False
 
 
 class EnrollmentViewSet(viewsets.ModelViewSet):
@@ -51,22 +46,28 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
             "academic_year",
             "term",
         ).all()
+        user = self.request.user
+        role = get_user_role(user)
+        school = get_user_school(user)
 
-        if not is_admin(self.request.user):
-            school_id = user_school_id(self.request.user)
-            if not school_id:
-                return queryset.none()
-            queryset = queryset.filter(classroom__school_id=school_id)
-
-            student_profile = getattr(self.request.user, "student_profile", None)
-            if student_profile is not None:
-                queryset = queryset.filter(student_id=student_profile.id)
+        if role == UserRole.ADMIN:
+            if school is not None:
+                queryset = queryset.filter(classroom__school_id=school.id)
+        elif role == UserRole.TEACHER:
+            queryset = queryset.filter(
+                classroom__teacher_subjects__teacher=user.teacher_profile,
+                classroom__teacher_subjects__is_active=True,
+            ).distinct()
+        elif role == UserRole.STUDENT:
+            queryset = queryset.filter(student_id=user.student_profile.id)
+        else:
+            return queryset.none()
 
         student = self.request.query_params.get("student")
         classroom = self.request.query_params.get("classroom")
         academic_year = self.request.query_params.get("academic_year")
         term = self.request.query_params.get("term")
-        status = self.request.query_params.get("status")
+        requested_status = self.request.query_params.get("status")
         search = self.request.query_params.get("search", "").strip()
 
         if student:
@@ -77,8 +78,13 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(academic_year_id=academic_year)
         if term:
             queryset = queryset.filter(term_id=term)
-        if status:
-            queryset = queryset.filter(status=status)
+        if requested_status:
+            # Older frontend code used ACTIVE before the enrollment lifecycle was
+            # finalized. Preserve that request as a compatibility alias while the
+            # canonical database value remains ENROLLED.
+            if requested_status == "ACTIVE":
+                requested_status = EnrollmentStatus.ENROLLED
+            queryset = queryset.filter(status=requested_status)
         if search:
             queryset = queryset.filter(
                 Q(student__user__first_name__icontains=search)
@@ -90,4 +96,12 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
+        school = get_user_school(self.request.user)
+        classroom = serializer.validated_data.get("classroom")
+        student = serializer.validated_data.get("student")
+        if school is not None:
+            if classroom is None or classroom.school_id != school.id:
+                raise PermissionDenied("The classroom does not belong to your institution.")
+            if student is None or student.school_id != school.id:
+                raise PermissionDenied("The student does not belong to your institution.")
         serializer.save()
