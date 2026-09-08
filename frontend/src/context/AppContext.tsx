@@ -67,10 +67,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setUser(currentUser);
       setRole(currentUser.role as Role);
 
-      if (currentUser.role === 'admin') {
-        setSchool(null);
-        setSchoolStatus('unavailable');
-      } else {
+      // Institution administrators, teachers, parents, and students all carry
+      // school_id. Platform staff/superusers intentionally do not.
+      if (currentUser.school_id) {
         setSchoolStatus('loading');
         try {
           const currentSchool = await getMySchool();
@@ -80,6 +79,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setSchool(null);
           setSchoolStatus('error');
         }
+      } else {
+        setSchool(null);
+        setSchoolStatus('unavailable');
       }
 
       setAuthStatus('authenticated');
@@ -105,7 +107,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAuthStatus('unauthenticated');
   }, []);
 
-  const toggleDark = useCallback(() => setDark((d) => !d), []);
+  const toggleDark = useCallback(() => setDark((d) => !d, []), []);
 
   return (
     <AppContext.Provider value={{ role, user, school, schoolStatus, authStatus, refreshSession, logout, dark, toggleDark }}>
