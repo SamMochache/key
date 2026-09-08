@@ -47,7 +47,10 @@ class SchoolScopedQuerysetMixin:
     def filter_school(self, queryset, school_field):
         role = get_user_role(self.request.user)
         if role == UserRole.ADMIN:
-            return queryset
+            school = self.school_for_user()
+            if school is None:
+                return queryset
+            return queryset.filter(**{school_field: school})
 
         school = self.school_for_user()
         if school is None:
@@ -63,6 +66,17 @@ class AssessmentViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
         queryset = Assessment.objects.select_related(
             "teacher__user", "teacher__school", "lesson_session"
         ).prefetch_related("rubric__criteria")
+        role = get_user_role(self.request.user)
+        if role == UserRole.STUDENT:
+            try:
+                student = self.request.user.student_profile
+            except ObjectDoesNotExist as exc:
+                raise PermissionDenied("Student profile not found.") from exc
+            queryset = queryset.filter(
+                status="PUBLISHED",
+                lesson_session__classroom__enrollments__student=student,
+            ).distinct()
+            return queryset
         return self.filter_school(queryset, "teacher__school")
 
     def perform_create(self, serializer):
@@ -91,6 +105,11 @@ class AssessmentSubmissionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
         role = get_user_role(self.request.user)
         if role == UserRole.STUDENT:
             return queryset.filter(enrollment__student__user=self.request.user)
+        if role == UserRole.PARENT:
+            return queryset.filter(
+                enrollment__student__parent_relationships__parent__user=self.request.user,
+                enrollment__student__parent_relationships__can_view_reports=True,
+            ).distinct()
         return self.filter_school(queryset, "enrollment__student__school")
 
     def perform_create(self, serializer):
@@ -120,9 +139,7 @@ class RubricViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
     permission_classes = [TeacherOrAdmin]
 
     def get_queryset(self):
-        queryset = Rubric.objects.select_related(
-            "assessment__teacher__school"
-        ).prefetch_related("criteria")
+        queryset = Rubric.objects.select_related("assessment__teacher__school").prefetch_related("criteria")
         return self.filter_school(queryset, "assessment__teacher__school")
 
 
@@ -131,9 +148,7 @@ class RubricCriterionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
     permission_classes = [TeacherOrAdmin]
 
     def get_queryset(self):
-        queryset = RubricCriterion.objects.select_related(
-            "rubric__assessment__teacher__school"
-        )
+        queryset = RubricCriterion.objects.select_related("rubric__assessment__teacher__school")
         return self.filter_school(queryset, "rubric__assessment__teacher__school")
 
 
@@ -161,9 +176,7 @@ class AssessmentEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
         total = evaluation.criterion_scores.aggregate(total=Sum("score"))["total"] or 0
         maximum = evaluation.submission.assessment.maximum_score
         if maximum is None:
-            maximum = evaluation.submission.assessment.rubric.criteria.aggregate(
-                total=Sum("maximum_score")
-            )["total"] or 0
+            maximum = evaluation.submission.assessment.rubric.criteria.aggregate(total=Sum("maximum_score"))["total"] or 0
 
         evaluation.total_score = total
         evaluation.percentage = (total / maximum * 100) if maximum else None
@@ -206,10 +219,7 @@ class CriterionScoreViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
             raise PermissionDenied("Score cannot exceed the criterion maximum.")
 
     def perform_create(self, serializer):
-        self._validate_score(
-            serializer.validated_data.get("score"),
-            serializer.validated_data.get("criterion"),
-        )
+        self._validate_score(serializer.validated_data.get("score"), serializer.validated_data.get("criterion"))
         serializer.save()
         self._recalculate(serializer.instance.evaluation)
 
@@ -226,9 +236,7 @@ class CriterionScoreViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
         total = evaluation.criterion_scores.aggregate(total=Sum("score"))["total"] or 0
         maximum = evaluation.submission.assessment.maximum_score
         if maximum is None:
-            maximum = evaluation.submission.assessment.rubric.criteria.aggregate(
-                total=Sum("maximum_score")
-            )["total"] or 0
+            maximum = evaluation.submission.assessment.rubric.criteria.aggregate(total=Sum("maximum_score"))["total"] or 0
         evaluation.total_score = total
         evaluation.percentage = (total / maximum * 100) if maximum else None
         evaluation.save(update_fields=["total_score", "percentage", "updated_at"])
@@ -258,26 +266,3 @@ class DashboardSummaryView(SchoolScopedQuerysetMixin, viewsets.ViewSet):
             raise PermissionDenied("Your account does not have dashboard access.")
 
         students = Student.objects.filter(is_active=True)
-        assessments = Assessment.objects.all()
-        submissions = AssessmentSubmission.objects.all()
-        evaluations = AssessmentEvaluation.objects.all()
-
-        if role == UserRole.STUDENT:
-            students = students.filter(user=request.user)
-            submissions = submissions.filter(enrollment__student__user=request.user)
-            evaluations = evaluations.filter(submission__enrollment__student__user=request.user)
-            assessments = assessments.filter(teacher__school=school)
-        elif school is not None:
-            students = students.filter(school=school)
-            assessments = assessments.filter(teacher__school=school)
-            submissions = submissions.filter(enrollment__student__school=school)
-            evaluations = evaluations.filter(submission__enrollment__student__school=school)
-
-        return Response({
-            "students": students.count(),
-            "assessments": assessments.count(),
-            "submissions": submissions.count(),
-            "evaluations": evaluations.count(),
-            "published_evaluations": evaluations.filter(published=True).count(),
-            "upcoming_assessments": assessments.filter(due_date__gte=timezone.localdate()).count(),
-        })
