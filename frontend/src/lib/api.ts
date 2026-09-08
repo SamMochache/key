@@ -65,4 +65,6 @@ export async function getEnrollment(id: string) { return request<ApiEnrollment>(
 export async function createEnrollment(payload: Record<string, unknown>) { return request<ApiEnrollment>('/enrollments/', { method: 'POST', body: JSON.stringify(payload) }); }
 export async function updateEnrollment(id: string, payload: Record<string, unknown>) { return request<ApiEnrollment>(`/enrollments/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) }); }
 export async function listAssessments() { const data = await request<Paginated<ApiAssessment> | ApiAssessment[]>('/assessments/'); return Array.isArray(data) ? data : data.results; }
-export async function... (truncated)
+export async function listSubmissions() { const data = await request<Paginated<ApiSubmission> | ApiSubmission[]>('/submissions/'); return Array.isArray(data) ? data : data.results; }
+export async function getDashboardSummary() { const data = await request<DashboardSummary | Paginated<DashboardSummary> | DashboardSummary[]>('/dashboard-summary/'); if (Array.isArray(data)) return data[0]; if ('results' in data) return data.results[0]; return data; }
+export { API_BASE_URL };
