@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -81,3 +82,28 @@ class School(BaseModel):
 
     def __str__(self):
         return self.name
+
+
+class SchoolAdministrator(BaseModel):
+    """Bind an institution administrator account to exactly one school."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="school_admin_profile",
+    )
+    school = models.ForeignKey(
+        School,
+        on_delete=models.CASCADE,
+        related_name="administrators",
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "school_administrators"
+        ordering = ["school__name", "user__first_name", "user__last_name"]
+        verbose_name = _("School Administrator")
+        verbose_name_plural = _("School Administrators")
+
+    def __str__(self):
+        return f"{self.user.full_name} - {self.school.name}"
