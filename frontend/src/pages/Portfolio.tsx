@@ -4,7 +4,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { getCurrentUser, listStudents, listSubmissions, type ApiStudent, type ApiSubmission } from '../lib/api';
+import { getCurrentUser, listEnrollments, listStudents, listSubmissions, type ApiStudent, type ApiSubmission } from '../lib/api';
 import {
   createPortfolio, createPortfolioArtifact, createPortfolioItem, getMyPortfolio, listPortfolioItems, listPortfolios,
   updatePortfolio, type ApiPortfolio, type ApiPortfolioItem, type PortfolioItemType,
@@ -28,6 +28,7 @@ export function Portfolio() {
   const [portfolio, setPortfolio] = useState<ApiPortfolio | null>(null);
   const [items, setItems] = useState<ApiPortfolioItem[]>([]);
   const [submissions, setSubmissions] = useState<ApiSubmission[]>([]);
+  const [studentEnrollmentIds, setStudentEnrollmentIds] = useState<Set<string>>(new Set());
   const [selectedPortfolio, setSelectedPortfolio] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -46,16 +47,18 @@ export function Portfolio() {
       const user = await getCurrentUser();
       const resolvedRole = currentRole || user.role;
       setRole(resolvedRole);
-      const [current, allPortfolios, submissionData, studentData] = await Promise.all([
+      const [current, allPortfolios, submissionData, studentData, ownEnrollments] = await Promise.all([
         resolvedRole === 'student' ? getMyPortfolio() : Promise.resolve(null),
         resolvedRole === 'student' ? Promise.resolve([]) : listPortfolios(),
         ['admin', 'teacher', 'student'].includes(resolvedRole) ? listSubmissions() : Promise.resolve([]),
         ['admin', 'teacher'].includes(resolvedRole) ? listStudents({ isActive: true }) : Promise.resolve([]),
+        resolvedRole === 'student' ? listEnrollments({ status: 'ACTIVE' }) : Promise.resolve([]),
       ]);
       setPortfolio(current);
       setPortfolios(allPortfolios);
       setSubmissions(submissionData);
       setStudents(studentData);
+      setStudentEnrollmentIds(new Set(ownEnrollments.map((enrollment) => enrollment.id)));
       const activeId = current?.id || selectedPortfolio || allPortfolios[0]?.id || '';
       setSelectedPortfolio(activeId);
       if (activeId) {
@@ -71,7 +74,10 @@ export function Portfolio() {
   useEffect(() => { void load(); }, []);
 
   const selectedStudentName = portfolio?.student_name || portfolios.find((p) => p.id === selectedPortfolio)?.student_name || 'Learner';
-  const visibleSubmissions = useMemo(() => submissions.filter((s) => !portfolio || s.student_name === portfolio.student_name), [submissions, portfolio]);
+  const visibleSubmissions = useMemo(() => {
+    if (isStudent) return submissions.filter((submission) => studentEnrollmentIds.has(submission.enrollment));
+    return submissions.filter((submission) => !portfolio || submission.student_name === portfolio.student_name);
+  }, [isStudent, submissions, portfolio, studentEnrollmentIds]);
 
   async function saveSummary() {
     if (!portfolio) return;
