@@ -4,9 +4,11 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Avatar } from '../components/ui/Avatar';
+import { useApp } from '../context/AppContext';
 import { getMyProfile, updateMyProfile, type SelfProfile } from '../lib/profileApi';
 
 export function Profile() {
+  const { refreshSession } = useApp();
   const [profile, setProfile] = useState<SelfProfile | null>(null);
   const [form, setForm] = useState({ first_name: '', last_name: '', phone_number: '' });
   const [loading, setLoading] = useState(true);
@@ -15,10 +17,13 @@ export function Profile() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
     getMyProfile().then((data) => {
+      if (cancelled) return;
       setProfile(data);
       setForm({ first_name: data.first_name, last_name: data.last_name, phone_number: data.phone_number || '' });
-    }).catch((err) => setError(err instanceof Error ? err.message : 'Unable to load your profile.')).finally(() => setLoading(false));
+    }).catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load your profile.'); }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const save = async (event: React.FormEvent) => {
@@ -28,6 +33,7 @@ export function Profile() {
       const data = await updateMyProfile(form);
       setProfile(data);
       setForm({ first_name: data.first_name, last_name: data.last_name, phone_number: data.phone_number || '' });
+      await refreshSession();
       setMessage('Profile updated successfully.');
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to save your profile.'); }
     finally { setSaving(false); }
