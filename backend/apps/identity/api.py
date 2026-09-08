@@ -1,4 +1,6 @@
-from rest_framework import permissions
+from django.contrib.auth import update_session_auth_hash
+from django.contrib.auth.password_validation import validate_password
+from rest_framework import permissions, serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -6,7 +8,7 @@ from rest_framework.views import APIView
 class CurrentUserView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request):
+    def _data(self, request):
         user = request.user
         photo_url = None
         if user.profile_photo:
@@ -46,4 +48,51 @@ class CurrentUserView(APIView):
             data["school_id"] = str(user.student_profile.school_id)
         else:
             data["role"] = "user"
-        return Response(data)
+        return data
+
+    def get(self, request):
+        return Response(self._data(request))
+
+    def patch(self, request):
+        user = request.user
+        allowed = {"first_name", "last_name", "phone_number", "preferred_language", "timezone"}
+        unknown = set(request.data.keys()) - allowed
+        if unknown:
+            return Response(
+                {"detail": f"These fields cannot be changed here: {', '.join(sorted(unknown))}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        for field in allowed.intersection(request.data.keys()):
+            value = request.data[field]
+            if not isinstance(value, str):
+                return Response({field: "This field must be a string."}, status=status.HTTP_400_BAD_REQUEST)
+            setattr(user, field, value.strip())
+        user.save(update_fields=list(allowed.intersection(request.data.keys())))
+        return Response(self._data(request))
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        current_password = request.data.get("current_password")
+        new_password = request.data.get("new_password")
+        confirm_password = request.data.get("confirm_password")
+
+        if not all(isinstance(value, str) and value for value in (current_password, new_password, confirm_password)):
+            return Response({"detail": "Current password, new password, and confirmation are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not request.user.check_password(current_password):
+            return Response({"current_password": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+        if new_password != confirm_password:
+            return Response({"confirm_password": "Passwords do not match."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            validate_password(new_password, request.user)
+        except Exception as exc:
+            if isinstance(exc, serializers.ValidationError):
+                return Response({"new_password": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+            raise
+
+        request.user.set_password(new_password)
+        request.user.save(update_fields=["password"])
+        update_session_auth_hash(request, request.user)
+        return Response({"detail": "Password changed successfully."})
