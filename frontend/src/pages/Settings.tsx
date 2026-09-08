@@ -7,7 +7,7 @@ import { useApp } from '../context/AppContext';
 import { changeMyPassword, getMyProfile, updateMyProfile } from '../lib/profileApi';
 
 export function Settings() {
-  const { dark, toggleDark } = useApp();
+  const { dark, toggleDark, refreshSession } = useApp();
   const [language, setLanguage] = useState('en');
   const [timezone, setTimezone] = useState('Africa/Nairobi');
   const [loading, setLoading] = useState(true);
@@ -17,19 +17,33 @@ export function Settings() {
   const [error, setError] = useState('');
   const [password, setPassword] = useState({ current_password: '', new_password: '', confirm_password: '' });
 
-  useEffect(() => { getMyProfile().then((data) => { setLanguage(data.preferred_language || 'en'); setTimezone(data.timezone || 'Africa/Nairobi'); }).catch((err) => setError(err instanceof Error ? err.message : 'Unable to load settings.')).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    getMyProfile().then((data) => {
+      if (cancelled) return;
+      setLanguage(data.preferred_language || 'en');
+      setTimezone(data.timezone || 'Africa/Nairobi');
+    }).catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load settings.'); }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const savePreferences = async (event: React.FormEvent) => {
     event.preventDefault(); setSaving(true); setMessage(''); setError('');
-    try { await updateMyProfile({ preferred_language: language, timezone }); setMessage('Preferences saved successfully.'); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Unable to save preferences.'); }
+    try {
+      await updateMyProfile({ preferred_language: language, timezone });
+      await refreshSession();
+      setMessage('Preferences saved successfully.');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to save preferences.'); }
     finally { setSaving(false); }
   };
 
   const savePassword = async (event: React.FormEvent) => {
     event.preventDefault(); setPasswordSaving(true); setMessage(''); setError('');
-    try { await changeMyPassword(password); setPassword({ current_password: '', new_password: '', confirm_password: '' }); setMessage('Password changed successfully.'); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Unable to change your password.'); }
+    try {
+      await changeMyPassword(password);
+      setPassword({ current_password: '', new_password: '', confirm_password: '' });
+      setMessage('Password changed successfully.');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to change your password.'); }
     finally { setPasswordSaving(false); }
   };
 
