@@ -1,6 +1,7 @@
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
-from rest_framework import permissions, serializers, status
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -62,12 +63,14 @@ class CurrentUserView(APIView):
                 {"detail": f"These fields cannot be changed here: {', '.join(sorted(unknown))}."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        for field in allowed.intersection(request.data.keys()):
+        changed = allowed.intersection(request.data.keys())
+        for field in changed:
             value = request.data[field]
             if not isinstance(value, str):
                 return Response({field: "This field must be a string."}, status=status.HTTP_400_BAD_REQUEST)
             setattr(user, field, value.strip())
-        user.save(update_fields=list(allowed.intersection(request.data.keys())))
+        if changed:
+            user.save(update_fields=list(changed))
         return Response(self._data(request))
 
 
@@ -80,17 +83,18 @@ class ChangePasswordView(APIView):
         confirm_password = request.data.get("confirm_password")
 
         if not all(isinstance(value, str) and value for value in (current_password, new_password, confirm_password)):
-            return Response({"detail": "Current password, new password, and confirmation are required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Current password, new password, and confirmation are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if not request.user.check_password(current_password):
             return Response({"current_password": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
         if new_password != confirm_password:
             return Response({"confirm_password": "Passwords do not match."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             validate_password(new_password, request.user)
-        except Exception as exc:
-            if isinstance(exc, serializers.ValidationError):
-                return Response({"new_password": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
-            raise
+        except DjangoValidationError as exc:
+            return Response({"new_password": exc.messages}, status=status.HTTP_400_BAD_REQUEST)
 
         request.user.set_password(new_password)
         request.user.save(update_fields=["password"])
