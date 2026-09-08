@@ -121,8 +121,6 @@ class TeacherSubjectViewSet(viewsets.ReadOnlyModelViewSet):
         elif role == UserRole.STUDENT:
             queryset = queryset.filter(
                 classroom__enrollments__student=user.student_profile,
-                classroom__enrollments__academic_year=models.F("academic_year"),
-                classroom__enrollments__term=models.F("term"),
             ).distinct()
         else:
             return queryset.none()
