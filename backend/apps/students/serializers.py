@@ -4,6 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.assessments.permissions import get_user_school
 from apps.identity.models import User
 
 from .models import Student
@@ -50,13 +51,11 @@ class StudentSerializer(serializers.ModelSerializer):
 
         if school is not None and request is not None:
             user = request.user
-            if not (user.is_staff or user.is_superuser):
-                teacher_profile = getattr(user, "teacher_profile", None)
-                student_profile = getattr(user, "student_profile", None)
-                profile = teacher_profile or student_profile
-                user_school = getattr(profile, "school", None)
-                if user_school is None or user_school.pk != school.pk:
-                    raise serializers.ValidationError({"school": "You can only use your own institution."})
+            user_school = get_user_school(user)
+            if user_school is not None and user_school.pk != school.pk:
+                raise serializers.ValidationError({"school": "You can only use your own institution."})
+            if user_school is None and not (user.is_staff or user.is_superuser):
+                raise serializers.ValidationError({"school": "Your account has no institution context."})
 
         if admission_number and school:
             qs = Student.objects.filter(school=school, admission_number=admission_number)
