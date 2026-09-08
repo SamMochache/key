@@ -31,6 +31,7 @@ const PEOPLE = ['admin', 'teacher'] as const;
 const LEARNING = ['admin', 'teacher', 'student'] as const;
 const ALL = ['admin', 'teacher', 'student'] as const;
 const COMMUNITY = ['admin', 'teacher', 'student', 'parent'] as const;
+const ASSESSMENT_USERS = ['admin', 'teacher', 'student'] as const;
 const STUDENT = ['student'] as const;
 const PARENT = ['parent'] as const;
 const ADMIN = ['admin'] as const;
@@ -55,11 +56,13 @@ export function App() {
               <Route element={<ProtectedRoute roles={[...STAFF]} />}>
                 <Route path="/attendance" element={<Attendance />} />
                 <Route path="/lessons" element={<Lessons />} />
-                <Route path="/assessments" element={<Assessments />} />
                 <Route path="/ai-reports" element={<AIReports />} />
                 <Route path="/parents" element={<Parents />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/reports" element={<Reports />} />
+              </Route>
+              <Route element={<ProtectedRoute roles={[...ASSESSMENT_USERS]} />}>
+                <Route path="/assessments" element={<Assessments />} />
               </Route>
               <Route element={<ProtectedRoute roles={[...ADMIN]} />}>
                 <Route path="/timetables" element={<Timetables />} />
