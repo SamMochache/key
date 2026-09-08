@@ -72,11 +72,10 @@ class AssessmentViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
                 student = self.request.user.student_profile
             except ObjectDoesNotExist as exc:
                 raise PermissionDenied("Student profile not found.") from exc
-            queryset = queryset.filter(
+            return queryset.filter(
                 status="PUBLISHED",
                 lesson_session__classroom__enrollments__student=student,
             ).distinct()
-            return queryset
         return self.filter_school(queryset, "teacher__school")
 
     def perform_create(self, serializer):
@@ -266,3 +265,29 @@ class DashboardSummaryView(SchoolScopedQuerysetMixin, viewsets.ViewSet):
             raise PermissionDenied("Your account does not have dashboard access.")
 
         students = Student.objects.filter(is_active=True)
+        assessments = Assessment.objects.all()
+        submissions = AssessmentSubmission.objects.all()
+        evaluations = AssessmentEvaluation.objects.all()
+
+        if role == UserRole.STUDENT:
+            students = students.filter(user=request.user)
+            submissions = submissions.filter(enrollment__student__user=request.user)
+            evaluations = evaluations.filter(submission__enrollment__student__user=request.user)
+            assessments = assessments.filter(
+                status="PUBLISHED",
+                lesson_session__classroom__enrollments__student__user=request.user,
+            ).distinct()
+        elif school is not None:
+            students = students.filter(school=school)
+            assessments = assessments.filter(teacher__school=school)
+            submissions = submissions.filter(enrollment__student__school=school)
+            evaluations = evaluations.filter(submission__enrollment__student__school=school)
+
+        return Response({
+            "students": students.count(),
+            "assessments": assessments.count(),
+            "submissions": submissions.count(),
+            "evaluations": evaluations.count(),
+            "published_evaluations": evaluations.filter(published=True).count(),
+            "upcoming_assessments": assessments.filter(due_date__gte=timezone.localdate()).count(),
+        })
