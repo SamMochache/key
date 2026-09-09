@@ -6,7 +6,10 @@ async function downloadPdf(path: string, params: Record<string, string>) {
   const query = new URLSearchParams(params);
   const response = await fetch(`${API_BASE_URL}${path}?${query.toString()}`, {
     headers: {
-      Accept: 'application/pdf',
+      // Do not request application/pdf here. DRF performs content negotiation
+      // before the view returns its Django FileResponse, and an APIView with
+      // JSON renderers can otherwise reject application/pdf with HTTP 406.
+      Accept: '*/*',
       ...(getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {}),
     },
   });
