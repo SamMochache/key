@@ -4,6 +4,8 @@ from django.db.models import Avg
 from django.http import FileResponse, JsonResponse
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
+from reportlab.lib.units import mm
+from reportlab.platypus import Spacer, Paragraph
 
 from apps.academics.models import AcademicYear, Term
 from apps.assessments.models import AssessmentEvaluation, AssessmentSubmission, CompetencyEvaluation
@@ -77,7 +79,7 @@ class StudentReportView(views.APIView):
             ["Student", str(student), "Admission", student.admission_number],
             ["Institution", student.school.name, "Class", enrollment.classroom.name],
             ["Academic Year", enrollment.academic_year.name, "Term", f"Term {enrollment.term.term_number}"],
-        ], [28 *  mm, 67 * mm, 28 * mm, 57 * mm]))
+        ], [28 * mm, 67 * mm, 28 * mm, 57 * mm]))
         story.append(Spacer(1, 5 * mm))
         story.append(summary_table([["Overall Average", f"{overall_average:.1f}%" if overall_average is not None else "—", "Attendance", f"{attendance_rate:.1f}%" if attendance_rate is not None else "—", "Assessments", str(len(submissions))]], [31 * mm, 27 * mm, 25 * mm, 27 * mm, 28 * mm, 42 * mm]))
         story.append(Paragraph("Assessment Results", styles["heading"]))
