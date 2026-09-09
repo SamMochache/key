@@ -2,6 +2,7 @@ import { getAccessToken } from './api';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace(/\/$/, '');
 const REFRESH_TOKEN_KEY = 'key_refresh_token';
+const ACCESS_TOKEN_KEY = 'key_access_token';
 
 async function refreshReportAccessToken() {
   const refresh = localStorage.getItem(REFRESH_TOKEN_KEY);
@@ -14,7 +15,7 @@ async function refreshReportAccessToken() {
   if (!response.ok) return null;
   const data = await response.json().catch(() => ({} as { access?: string; refresh?: string }));
   if (!data.access) return null;
-  localStorage.setItem('key_access_token', data.access);
+  localStorage.setItem(ACCESS_TOKEN_KEY, data.access);
   if (data.refresh) localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh);
   return data.access;
 }
@@ -24,9 +25,9 @@ async function downloadPdf(path: string, params: Record<string, string>, retry =
   const token = getAccessToken();
   const response = await fetch(`${API_BASE_URL}${path}?${query.toString()}`, {
     headers: {
-      // Do not request application/pdf. DRF performs content negotiation
-      // before the view returns its Django FileResponse, and an APIView with
-      // JSON renderers can otherwise reject application/pdf with HTTP 406.
+      // DRF negotiates the renderer before returning the Django FileResponse.
+      // Asking for application/pdf here can therefore produce HTTP 406 when
+      // the APIView uses JSON renderers. The endpoint itself returns a PDF.
       Accept: '*/*',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
@@ -127,7 +128,7 @@ export interface PublishedAINarrativeResponse {
   published_at: string | null;
 }
 
-async function jsonRequest(path: string, options: RequestInit = {}) {
+async function jsonRequest(path: string, options: RequestInit = {}, retry = true) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -137,6 +138,12 @@ async function jsonRequest(path: string, options: RequestInit = {}) {
       ...(options.headers || {}),
     },
   });
+
+  if (response.status === 401 && retry) {
+    const refreshed = await refreshReportAccessToken();
+    if (refreshed) return jsonRequest(path, options, false);
+  }
+
   const detail = await response.text().catch(() => '');
   let payload: any = {};
   try { payload = detail ? JSON.parse(detail) : {}; } catch { /* handled below */ }
