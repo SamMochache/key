@@ -106,7 +106,7 @@ def footer(canvas, doc):
     canvas.line(doc.leftMargin, 9 * mm, width - doc.rightMargin, 9 * mm)
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(MUTED)
-    timestamp = timezone.localtime(datetime.now(timezone.utc)).strftime("%d %b %Y %H:%M")
+    timestamp = timezone.localtime(datetime.now(timezone.UTC)).strftime("%d %b %Y %H:%M")
     canvas.drawString(doc.leftMargin, 5.5 * mm, f"KEY • Generated {timestamp}")
     canvas.drawRightString(width - doc.rightMargin, 5.5 * mm, f"Page {doc.page}")
     canvas.restoreState()
