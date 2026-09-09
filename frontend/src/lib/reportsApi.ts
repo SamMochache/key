@@ -1,18 +1,42 @@
 import { getAccessToken } from './api';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace(/\/$/, '');
+const REFRESH_TOKEN_KEY = 'key_refresh_token';
 
-async function downloadPdf(path: string, params: Record<string, string>) {
+async function refreshReportAccessToken() {
+  const refresh = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!refresh) return null;
+  const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ refresh }),
+  });
+  if (!response.ok) return null;
+  const data = await response.json().catch(() => ({} as { access?: string; refresh?: string }));
+  if (!data.access) return null;
+  localStorage.setItem('key_access_token', data.access);
+  if (data.refresh) localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh);
+  return data.access;
+}
+
+async function downloadPdf(path: string, params: Record<string, string>, retry = true) {
   const query = new URLSearchParams(params);
+  const token = getAccessToken();
   const response = await fetch(`${API_BASE_URL}${path}?${query.toString()}`, {
     headers: {
-      // Do not request application/pdf here. DRF performs content negotiation
+      // Do not request application/pdf. DRF performs content negotiation
       // before the view returns its Django FileResponse, and an APIView with
       // JSON renderers can otherwise reject application/pdf with HTTP 406.
       Accept: '*/*',
-      ...(getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
+
+  if (response.status === 401 && retry) {
+    const refreshed = await refreshReportAccessToken();
+    if (refreshed) return downloadPdf(path, params, false);
+  }
+
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     let message = detail || `Unable to generate report (${response.status}).`;
