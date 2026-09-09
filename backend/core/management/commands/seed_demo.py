@@ -2,7 +2,6 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
-from django.db import transaction
 from django.utils import timezone
 
 from apps.academics.models import (
@@ -50,23 +49,42 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--reset", action="store_true", help="Remove the existing KEY demo school dataset before recreating it.")
 
-    @transaction.atomic
     def handle(self, *args, **options):
+        # Do not keep reset and the entire seed operation inside one long-lived
+        # transaction. A long transaction can retain locks while the seeder is
+        # creating dependent records, which can make PostgreSQL appear to hang.
         if options["reset"]:
             self.reset_demo_data()
+
+        phases = [
+            ("school", self.seed_school),
+        ]
         school = self.seed_school()
+        self.stdout.write("  ✓ School")
         academic_year = self.seed_academics(school)
+        self.stdout.write("  ✓ Academic year")
         terms = self.seed_terms(academic_year)
+        self.stdout.write("  ✓ Terms")
         departments = self.seed_departments(school)
+        self.stdout.write("  ✓ Departments")
         admin = self.seed_admin(school)
+        self.stdout.write("  ✓ Admin")
         teachers = self.seed_teachers(school, departments)
+        self.stdout.write("  ✓ Teachers")
         curriculum, stages, subjects = self.seed_curriculum()
+        self.stdout.write("  ✓ Curriculum and subjects")
         classrooms = self.seed_classrooms(school, academic_year, terms, stages)
+        self.stdout.write("  ✓ Classrooms")
         self.seed_teacher_assignments(teachers, classrooms, academic_year, terms, subjects)
+        self.stdout.write("  ✓ Teacher subject and homeroom assignments")
         students = self.seed_students(school)
+        self.stdout.write("  ✓ Students")
         enrollments = self.seed_enrollments(students, classrooms, academic_year, terms)
+        self.stdout.write("  ✓ Enrollments")
         periods = self.seed_periods(school)
+        self.stdout.write("  ✓ Periods")
         self.seed_timetables_and_learning_data(school, academic_year, terms, classrooms, teachers, subjects, enrollments, periods)
+        self.stdout.write("  ✓ Timetables, lessons, attendance and assessments")
         self.stdout.write(self.style.SUCCESS("\nDemo dataset created successfully."))
         self.stdout.write(f"School: {school.name} ({school.short_name})")
         self.stdout.write("\nLOGIN ACCOUNTS (development/test only):")
