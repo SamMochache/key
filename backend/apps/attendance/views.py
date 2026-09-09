@@ -15,7 +15,9 @@ class AttendanceAccessPermission(permissions.BasePermission):
 
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and (
-            is_admin(request.user) or getattr(request.user, "teacher_profile", None) is not None
+            is_admin(request.user)
+            or getattr(request.user, "teacher_profile", None) is not None
+            or getattr(request.user, "student_profile", None) is not None
         ))
 
 
@@ -30,18 +32,28 @@ class AttendanceRegisterViewSet(viewsets.ReadOnlyModelViewSet):
             "lesson_session__timetable_entry__teacher_subject__subject",
         ).prefetch_related("records__enrollment__student__user")
 
-        if not is_admin(self.request.user):
-            queryset = queryset.filter(lesson_session__teacher=self.request.user)
+        user = self.request.user
+        if getattr(user, "student_profile", None) is not None and not is_admin(user):
+            # Students may read only registers containing their own enrollment.
+            queryset = queryset.filter(records__enrollment__student=user.student_profile).distinct()
+        elif not is_admin(user):
+            queryset = queryset.filter(lesson_session__teacher=user)
 
         lesson_session = self.request.query_params.get("lesson_session")
         lesson_date = self.request.query_params.get("lesson_date")
         classroom = self.request.query_params.get("classroom")
+        student = self.request.query_params.get("student")
         if lesson_session:
             queryset = queryset.filter(lesson_session_id=lesson_session)
         if lesson_date:
             queryset = queryset.filter(lesson_session__lesson_date=lesson_date)
         if classroom:
             queryset = queryset.filter(lesson_session__timetable_entry__classroom_id=classroom)
+        if student and is_admin(user):
+            queryset = queryset.filter(records__enrollment__student_id=student).distinct()
+        elif student and getattr(user, "student_profile", None) is not None:
+            if str(user.student_profile.id) != str(student):
+                return queryset.none()
         return queryset.order_by("-lesson_session__lesson_date")
 
     @action(detail=False, methods=["post"], url_path="bulk")
