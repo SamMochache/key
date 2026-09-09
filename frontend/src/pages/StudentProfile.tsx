@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   GlobeIcon, CakeIcon, ArrowLeftIcon, SparklesIcon, GraduationCapIcon,
-  PlusIcon, ArrowRightLeftIcon, XIcon
+  PlusIcon, XIcon
 } from 'lucide-react';
 import { Card, CardHeader } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -36,11 +36,9 @@ export function StudentProfile() {
   const [formError, setFormError] = useState('');
 
   const loadData = async (studentId: string) => {
-    const [studentData, enrollmentData] = await Promise.all([
-      getStudent(studentId), listEnrollments({ search: studentId })
-    ]);
+    const studentData = await getStudent(studentId);
+    const enrollmentData = await listEnrollments({ search: studentData.admission_number });
     setStudent(studentData);
-    // The enrollment endpoint's search is name/admission based, not ID based. Keep only this student's records.
     setEnrollments(enrollmentData.filter((item) => item.student === studentId));
   };
 
@@ -172,7 +170,7 @@ export function StudentProfile() {
             <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4 text-sm"><Meta icon={<CakeIcon className="h-4 w-4" />} label={`${student.date_of_birth} · Age ${student.age}`} /><Meta icon={<GlobeIcon className="h-4 w-4" />} label={student.nationality} /></div>
             {currentEnrollment && <div className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/60"><GraduationCapIcon className="h-4 w-4 text-brand-500" /><span className="font-semibold text-slate-700 dark:text-slate-200">{currentEnrollment.classroom_name}</span><span className="text-slate-400">· {currentEnrollment.academic_year_name} · Term {currentEnrollment.term_number}</span></div>}
           </div>
-          <div className="flex sm:flex-col gap-3"><Link to="/ai-reports"><Button className="w-full"><SparklesIcon className="h-4 w-4" /> AI Report</Button></Link><Button variant="secondary">Message parent</Button></div>
+          <div className="flex sm:flex-col gap-3"><Link to={`/ai-reports?student=${encodeURIComponent(student.id)}`}><Button className="w-full"><SparklesIcon className="h-4 w-4" /> AI Report</Button></Link><Button variant="secondary">Message parent</Button></div>
         </div>
       </Card>
 
