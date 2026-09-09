@@ -172,7 +172,16 @@ class AssessmentEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
             "submission__assessment__teacher__school",
             "submission__enrollment__student__user",
         ).prefetch_related("criterion_scores", "competency_evaluations__competency")
-        return self.filter_school(queryset, "submission__enrollment__student__school")
+        role = get_user_role(self.request.user)
+        if role == UserRole.STUDENT:
+            queryset = queryset.filter(submission__enrollment__student__user=self.request.user)
+        else:
+            queryset = self.filter_school(queryset, "submission__enrollment__student__school")
+
+        submission_id = self.request.query_params.get("submission")
+        if submission_id:
+            queryset = queryset.filter(submission_id=submission_id)
+        return queryset
 
     def perform_create(self, serializer):
         evaluation = serializer.save()
