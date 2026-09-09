@@ -52,6 +52,6 @@ export const updateEvaluation=(id:string,p:Record<string,unknown>)=>request<ApiE
 export const listEvaluations=(submission?:string)=>list<ApiEvaluation>(`/evaluations/${submission?`?submission=${encodeURIComponent(submission)}`:''}`);
 export const createCriterionScore=(p:Record<string,unknown>)=>request<ApiCriterionScore>('/criterion-scores/',{method:'POST',body:JSON.stringify(p)});
 export const updateCriterionScore=(id:string,p:Record<string,unknown>)=>request<ApiCriterionScore>(`/criterion-scores/${id}/`,{method:'PATCH',body:JSON.stringify(p)});
-export const publishEvaluation=(id:string)=>request<ApiEvaluation>(`/evaluations/${id}/publish/`);
+export const publishEvaluation=(id:string)=>request<ApiEvaluation>(`/evaluations/${id}/publish/`,{method:'POST'});
 export const createRubric=(p:Record<string,unknown>)=>request<ApiRubric>('/rubrics/',{method:'POST',body:JSON.stringify(p)});
 export const createRubricCriterion=(p:Record<string,unknown>)=>request<ApiRubricCriterion>('/rubric-criteria/',{method:'POST',body:JSON.stringify(p)});
