@@ -16,6 +16,9 @@ from .serializers import LessonSessionSerializer
 
 
 def school_id_for(user):
+    school_admin = getattr(user, "school_admin_profile", None)
+    if school_admin is not None and school_admin.is_active:
+        return school_admin.school_id
     teacher = getattr(user, "teacher_profile", None)
     if teacher is not None:
         return teacher.school_id
@@ -25,8 +28,17 @@ def school_id_for(user):
     return None
 
 
+def is_platform_admin(user):
+    school_admin = getattr(user, "school_admin_profile", None)
+    return bool(user.is_superuser or (user.is_staff and not school_admin))
+
+
 def is_admin(user):
-    return bool(user.is_staff or user.is_superuser)
+    school_admin = getattr(user, "school_admin_profile", None)
+    return bool(
+        is_platform_admin(user)
+        or (school_admin is not None and school_admin.is_active)
+    )
 
 
 def weekday_for(day):
@@ -72,14 +84,15 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
             "timetable_entry__teacher_subject__subject",
             "timetable_entry__timetable__term",
         )
-        if not is_admin(self.request.user):
+        if not is_platform_admin(self.request.user):
             school_id = school_id_for(self.request.user)
             qs = qs.filter(timetable_entry__classroom__school_id=school_id)
             teacher = getattr(self.request.user, "teacher_profile", None)
             student = getattr(self.request.user, "student_profile", None)
-            if teacher is not None:
+            school_admin = getattr(self.request.user, "school_admin_profile", None)
+            if teacher is not None and not (school_admin is not None and school_admin.is_active):
                 qs = qs.filter(teacher_id=self.request.user.id)
-            elif student is not None:
+            elif student is not None and not (school_admin is not None and school_admin.is_active):
                 qs = qs.filter(timetable_entry__classroom__enrollments__student_id=student.id)
 
         filters = {
