@@ -6,8 +6,14 @@ from .models.attendance_register import AttendanceRegister
 from .serializers import AttendanceBulkSerializer, AttendanceRegisterSerializer
 
 
+def is_platform_admin(user):
+    school_admin = getattr(user, "school_admin_profile", None)
+    return bool(user.is_superuser or (user.is_staff and not school_admin))
+
+
 def is_admin(user):
-    return bool(user.is_staff or user.is_superuser)
+    school_admin = getattr(user, "school_admin_profile", None)
+    return bool(is_platform_admin(user) or (school_admin is not None and school_admin.is_active))
 
 
 class AttendanceAccessPermission(permissions.BasePermission):
@@ -34,7 +40,6 @@ class AttendanceRegisterViewSet(viewsets.ReadOnlyModelViewSet):
 
         user = self.request.user
         if getattr(user, "student_profile", None) is not None and not is_admin(user):
-            # Students may read only registers containing their own enrollment.
             queryset = queryset.filter(records__enrollment__student=user.student_profile).distinct()
         elif not is_admin(user):
             queryset = queryset.filter(lesson_session__teacher=user)
