@@ -220,3 +220,78 @@ class CriterionScoreViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
             raise PermissionDenied("Score cannot be negative.")
         if score is not None and criterion is not None and score > criterion.maximum_score:
             raise PermissionDenied("Score cannot exceed the criterion maximum.")
+
+    def perform_create(self, serializer):
+        self._validate_score(serializer.validated_data.get("score"), serializer.validated_data.get("criterion"))
+        serializer.save()
+        self._recalculate(serializer.instance.evaluation)
+
+    def perform_update(self, serializer):
+        self._validate_score(
+            serializer.validated_data.get("score", serializer.instance.score),
+            serializer.validated_data.get("criterion", serializer.instance.criterion),
+        )
+        serializer.save()
+        self._recalculate(serializer.instance.evaluation)
+
+    @staticmethod
+    def _recalculate(evaluation):
+        total = evaluation.criterion_scores.aggregate(total=Sum("score"))["total"] or 0
+        maximum = evaluation.submission.assessment.maximum_score
+        if maximum is None:
+            maximum = evaluation.submission.assessment.rubric.criteria.aggregate(total=Sum("maximum_score"))["total"] or 0
+        evaluation.total_score = total
+        evaluation.percentage = (total / maximum * 100) if maximum else None
+        evaluation.save(update_fields=["total_score", "percentage", "updated_at"])
+
+
+class CompetencyEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
+    serializer_class = CompetencyEvaluationSerializer
+    permission_classes = [EvaluationAccessPermission]
+
+    def get_queryset(self):
+        queryset = CompetencyEvaluation.objects.select_related(
+            "competency",
+            "evaluation__submission__assessment__teacher__school",
+            "evaluation__submission__enrollment__student__school",
+        )
+        return self.filter_school(queryset, "evaluation__submission__enrollment__student__school")
+
+
+class DashboardSummaryView(SchoolScopedQuerysetMixin, viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        school = self.school_for_user()
+        role = get_user_role(request.user)
+
+        if role not in {UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT}:
+            raise PermissionDenied("Your account does not have dashboard access.")
+
+        students = Student.objects.filter(is_active=True)
+        assessments = Assessment.objects.all()
+        submissions = AssessmentSubmission.objects.all()
+        evaluations = AssessmentEvaluation.objects.all()
+
+        if role == UserRole.STUDENT:
+            students = students.filter(user=request.user)
+            submissions = submissions.filter(enrollment__student__user=request.user)
+            evaluations = evaluations.filter(submission__enrollment__student__user=request.user)
+            assessments = assessments.filter(
+                status="PUBLISHED",
+                lesson_session__timetable_entry__classroom__enrollments__student__user=request.user,
+            ).distinct()
+        elif school is not None:
+            students = students.filter(school=school)
+            assessments = assessments.filter(teacher__school=school)
+            submissions = submissions.filter(enrollment__student__school=school)
+            evaluations = evaluations.filter(submission__enrollment__student__school=school)
+
+        return Response({
+            "students": students.count(),
+            "assessments": assessments.count(),
+            "submissions": submissions.count(),
+            "evaluations": evaluations.count(),
+            "published_evaluations": evaluations.filter(published=True).count(),
+            "upcoming_assessments": assessments.filter(due_date__gte=timezone.localdate()).count(),
+        })
