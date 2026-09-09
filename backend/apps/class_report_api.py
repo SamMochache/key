@@ -3,6 +3,8 @@ from io import BytesIO
 from django.http import FileResponse, JsonResponse
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, Spacer
 
 from apps.academics.models import Classroom
 from apps.assessments.models import AssessmentEvaluation
@@ -58,7 +60,7 @@ class ClassReportView(views.APIView):
         report_header(story, classroom.school.name, "Class Academic Report", f"{classroom.academic_year.name} • Term {classroom.term.term_number}")
         story.append(info_table([["Class", classroom.name, "Code", classroom.code, "Stage", classroom.cambridge_stage.name], ["Academic Year", classroom.academic_year.name, "Term", f"Term {classroom.term.term_number}", "Students", str(len(rows))]], [25 * mm, 55 * mm, 22 * mm, 45 * mm, 22 * mm, 55 * mm]))
         story.append(Spacer(1, 4 * mm))
-        story.append(summary_table([["Class Average", f"{class_average:.1f}%" if class_average is not None else "—", "Attendance", f"{class_attendance:.1f}%" if class_attendance is not None else "—", "Published Results", str(len(class_scores))]], [34 * mm, 35 * mm, 30 * mm, 35 * mm, 40 * mm, 35 * mm]))
+        story.append(summary_table(["Class Average", f"{class_average:.1f}%" if class_average is not None else "—", "Attendance", f"{class_attendance:.1f}%" if class_attendance is not None else "—", "Published Results", str(len(class_scores))], [34 * mm, 35 * mm, 30 * mm, 35 * mm, 40 * mm, 35 * mm]))
         story.append(Paragraph("Student Performance", styles["heading"]))
         table_data = [["Admission", "Student", "Assessment Average", "Attendance", "Results"]] + rows
         if len(table_data) == 1:
