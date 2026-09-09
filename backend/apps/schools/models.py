@@ -40,6 +40,15 @@ class School(BaseModel):
         blank=True,
     )
 
+    phone_number = models.CharField(
+        max_length=30,
+        blank=True,
+    )
+
+    website = models.URLField(
+        blank=True,
+    )
+
     logo = models.ImageField(
         _("Logo"),
         upload_to="schools/logos/",
@@ -104,6 +113,18 @@ class SchoolAdministrator(BaseModel):
         ordering = ["school__name", "user__first_name", "user__last_name"]
         verbose_name = _("School Administrator")
         verbose_name_plural = _("School Administrators")
+
+    def save(self, *args, **kwargs):
+        """Keep institution administrators compatible with Django admin access.
+
+        Application authorization still comes from the SchoolAdministrator
+        relationship. ``is_staff`` only grants access to Django's admin site.
+        A school administrator must never become a superuser implicitly.
+        """
+        self.user.is_staff = True
+        self.user.is_active = True
+        self.user.save(update_fields=["is_staff", "is_active"])
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.user.full_name} - {self.school.name}"
