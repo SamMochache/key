@@ -38,13 +38,15 @@ class AINarrativeReportHistoryView(views.APIView):
         history = AINarrativeReportHistory.objects.select_related("actor").filter(report_id=report.id)
         results = []
         for item in history[:100]:
+            actor = item.actor
+            actor_name = getattr(actor, "full_name", "") or getattr(actor, "email", "")
             results.append({
                 "id": str(item.id),
                 "action": item.action,
                 "status": item.status,
                 "actor": {
                     "id": str(item.actor_id),
-                    "name": item.actor.get_full_name() or item.actor.email,
+                    "name": actor_name,
                 },
                 "occurred_at": item.occurred_at,
                 "model": item.model_used,
