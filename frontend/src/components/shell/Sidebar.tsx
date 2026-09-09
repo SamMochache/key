@@ -5,42 +5,39 @@ import { navGroups } from './nav';
 import { useApp } from '../../context/AppContext';
 import { LOGO_URL } from '../../lib/data';
 import { cn } from '../../lib/utils';
-function Icon({ name, className }: {name: string;className?: string;}) {
+
+function Icon({ name, className }: { name: string; className?: string }) {
   const Cmp = (Icons as any)[name] ?? Icons.Circle;
   return <Cmp className={className} />;
 }
-export function Sidebar({
-  open,
-  onClose
 
-
-
-}: {open: boolean;onClose: () => void;}) {
-  const { role, school } = useApp();
-  const schoolName = school?.name || (role === 'admin' ? 'Key International' : 'Your Institution');
-  const schoolShortName = school?.short_name || (role === 'admin' ? 'MONTESSORI SCHOOL' : 'INSTITUTION');
+export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { role, school, schoolStatus } = useApp();
+  const isPlatformAdmin = role === 'admin' && schoolStatus === 'unavailable' && !school;
+  const schoolName = school?.name || (isPlatformAdmin ? 'KEY Platform Administration' : 'Your Institution');
+  const schoolShortName = school?.short_name || (isPlatformAdmin ? 'SUPER ADMIN' : 'INSTITUTION');
 
   return (
     <>
-      {open &&
-      <div
-        className="fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-sm lg:hidden"
-        onClick={onClose}
-        aria-hidden />
-
-      }
+      {open && (
+        <div
+          className="fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-sm lg:hidden"
+          onClick={onClose}
+          aria-hidden
+        />
+      )}
       <aside
         className={cn(
           'fixed z-40 inset-y-0 left-0 w-72 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200/70 dark:border-slate-800 transition-transform duration-300 lg:translate-x-0',
           open ? 'translate-x-0' : '-translate-x-full'
-        )}>
-        
+        )}
+      >
         <div className="flex items-center gap-3 px-5 h-16 shrink-0">
           <img
             src={LOGO_URL}
             alt=""
-            className="h-9 w-9 rounded-xl object-contain bg-brand-50 dark:bg-slate-800 p-0.5" />
-          
+            className="h-9 w-9 rounded-xl object-contain bg-brand-50 dark:bg-slate-800 p-0.5"
+          />
           <div className="leading-tight min-w-0">
             <p className="font-display font-extrabold text-slate-800 dark:text-white text-[15px] truncate">
               {schoolName}
@@ -61,42 +58,40 @@ export function Sidebar({
                   {group.title}
                 </p>
                 <div className="space-y-0.5">
-                  {items.map((item) =>
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.to === '/'}
-                    onClick={onClose}
-                    className={({ isActive }) =>
-                    cn(
-                      'group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition-colors',
-                      isActive ?
-                      'bg-brand-600 text-white shadow-soft' :
-                      'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                    )
-                    }>
-                    
+                  {items.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.to === '/'}
+                      onClick={onClose}
+                      className={({ isActive }) =>
+                        cn(
+                          'group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition-colors',
+                          isActive
+                            ? 'bg-brand-600 text-white shadow-soft'
+                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        )
+                      }
+                    >
                       <Icon name={item.icon} className="h-[18px] w-[18px]" />
                       {item.label}
                     </NavLink>
-                  )}
+                  ))}
                 </div>
-              </div>);
-
+              </div>
+            );
           })}
         </nav>
 
         <div className="p-3">
           <div className="rounded-2xl bg-brand-50 dark:bg-slate-800 p-4">
-            <p className="text-sm font-bold text-brand-800 dark:text-brand-200">
-              Growth over grades
-            </p>
+            <p className="text-sm font-bold text-brand-800 dark:text-brand-200">Growth over grades</p>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
               Every child’s journey, observed with care.
             </p>
           </div>
         </div>
       </aside>
-    </>);
-
+    </>
+  );
 }
