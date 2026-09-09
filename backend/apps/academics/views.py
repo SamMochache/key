@@ -16,6 +16,9 @@ from .serializers import (
 
 
 def user_school(user):
+    school_admin_profile = getattr(user, "school_admin_profile", None)
+    if school_admin_profile is not None and school_admin_profile.is_active:
+        return school_admin_profile.school
     teacher_profile = getattr(user, "teacher_profile", None)
     if teacher_profile is not None:
         return teacher_profile.school
@@ -25,8 +28,17 @@ def user_school(user):
     return None
 
 
+def is_platform_admin(user):
+    school_admin_profile = getattr(user, "school_admin_profile", None)
+    return bool(user.is_superuser or (user.is_staff and not school_admin_profile))
+
+
 def is_admin(user):
-    return bool(user.is_staff or user.is_superuser)
+    school_admin_profile = getattr(user, "school_admin_profile", None)
+    return bool(
+        is_platform_admin(user)
+        or (school_admin_profile is not None and school_admin_profile.is_active)
+    )
 
 
 def student_classrooms(user):
@@ -52,7 +64,7 @@ class SchoolScopedViewSet(viewsets.ModelViewSet):
     school_field = "school"
 
     def filter_school(self, queryset):
-        if is_admin(self.request.user):
+        if is_platform_admin(self.request.user):
             return queryset
         school = user_school(self.request.user)
         return queryset.filter(**{self.school_field: school})
@@ -75,7 +87,7 @@ class AcademicYearViewSet(SchoolScopedViewSet):
 
     def perform_create(self, serializer):
         school = serializer.validated_data.get("school")
-        if not is_admin(self.request.user):
+        if not is_platform_admin(self.request.user):
             school = user_school(self.request.user)
         serializer.save(school=school)
 
@@ -217,7 +229,7 @@ class ClassroomViewSet(SchoolScopedViewSet):
 
     def perform_create(self, serializer):
         school = serializer.validated_data.get("school")
-        if not is_admin(self.request.user):
+        if not is_platform_admin(self.request.user):
             school = user_school(self.request.user)
         serializer.save(school=school)
 
