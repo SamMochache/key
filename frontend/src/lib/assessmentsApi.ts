@@ -1,4 +1,4 @@
-import { API_BASE_URL, getAccessToken } from './api';
+import { API_BASE_URL, getAccessToken, setTokens } from './api';
 
 export type AssessmentStatus = 'DRAFT' | 'PUBLISHED' | 'CLOSED';
 export type SubmissionStatus = 'DRAFT' | 'SUBMITTED' | 'RETURNED' | 'GRADED';
@@ -9,7 +9,37 @@ export interface ApiSubmission { id:string; assessment:string; enrollment:string
 export interface ApiEvaluation { id:string; submission:string; student_name:string; total_score:string|null; percentage:string|null; narrative_feedback:string; published:boolean; published_at:string|null; criterion_scores:ApiCriterionScore[]; competency_evaluations:unknown[]; }
 export interface ApiCriterionScore { id:string; evaluation:string; criterion:string; score:string|null; feedback:string; }
 interface Paginated<T>{results:T[];count:number;next:string|null;previous:string|null;}
-async function request<T>(path:string,init:RequestInit={}):Promise<T>{const headers=new Headers(init.headers);headers.set('Accept','application/json');if(init.body&&!headers.has('Content-Type'))headers.set('Content-Type','application/json');const token=getAccessToken();if(token)headers.set('Authorization',`Bearer ${token}`);const response=await fetch(`${API_BASE_URL}${path}`,{...init,headers});if(!response.ok){const detail=await response.text().catch(()=>'');let message=detail;try{const parsed=JSON.parse(detail);message=Object.entries(parsed).map(([k,v])=>`${k}: ${Array.isArray(v)?v.join(', '):String(v)}`).join(' ');}catch{}throw new Error(message||`Assessment API request failed (${response.status})`);}if(response.status===204)return undefined as T;return response.json() as Promise<T>}
+
+async function refreshAccessToken() {
+  const refresh = localStorage.getItem('key_refresh_token');
+  if (!refresh) return null;
+  const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ refresh }),
+  });
+  if (!response.ok) return null;
+  const data = await response.json().catch(() => ({} as { access?: string; refresh?: string }));
+  if (!data.access) return null;
+  setTokens(data.access, data.refresh);
+  return data.access;
+}
+
+async function request<T>(path:string,init:RequestInit={},retry=true):Promise<T>{
+  const headers=new Headers(init.headers);
+  headers.set('Accept','application/json');
+  if(init.body&&!headers.has('Content-Type'))headers.set('Content-Type','application/json');
+  const token=getAccessToken();
+  if(token)headers.set('Authorization',`Bearer ${token}`);
+  const response=await fetch(`${API_BASE_URL}${path}`,{...init,headers});
+  if(response.status===401&&retry){
+    const refreshed=await refreshAccessToken();
+    if(refreshed)return request<T>(path,init,false);
+  }
+  if(!response.ok){const detail=await response.text().catch(()=>'');let message=detail;try{const parsed=JSON.parse(detail);message=Object.entries(parsed).map(([k,v])=>`${k}: ${Array.isArray(v)?v.join(', '):String(v)}`).join(' ');}catch{}throw new Error(message||`Assessment API request failed (${response.status})`)}
+  if(response.status===204)return undefined as T;
+  return response.json() as Promise<T>
+}
 function list<T>(path:string){return request<Paginated<T>|T[]>(path).then(d=>Array.isArray(d)?d:d.results)}
 export const listAssessments=(p:{status?:string;lessonSession?:string}={})=>{const q=new URLSearchParams();if(p.status)q.set('status',p.status);if(p.lessonSession)q.set('lesson_session',p.lessonSession);return list<ApiAssessment>(`/assessments/${q.toString()?`?${q}`:''}`)};
 export const createAssessment=(p:Record<string,unknown>)=>request<ApiAssessment>('/assessments/',{method:'POST',body:JSON.stringify(p)});
@@ -22,6 +52,6 @@ export const updateEvaluation=(id:string,p:Record<string,unknown>)=>request<ApiE
 export const listEvaluations=(submission?:string)=>list<ApiEvaluation>(`/evaluations/${submission?`?submission=${encodeURIComponent(submission)}`:''}`);
 export const createCriterionScore=(p:Record<string,unknown>)=>request<ApiCriterionScore>('/criterion-scores/',{method:'POST',body:JSON.stringify(p)});
 export const updateCriterionScore=(id:string,p:Record<string,unknown>)=>request<ApiCriterionScore>(`/criterion-scores/${id}/`,{method:'PATCH',body:JSON.stringify(p)});
-export const publishEvaluation=(id:string)=>request<ApiEvaluation>(`/evaluations/${id}/publish/`,{method:'POST'});
+export const publishEvaluation=(id:string)=>request<ApiEvaluation>(`/evaluations/${id}/publish/`);
 export const createRubric=(p:Record<string,unknown>)=>request<ApiRubric>('/rubrics/',{method:'POST',body:JSON.stringify(p)});
 export const createRubricCriterion=(p:Record<string,unknown>)=>request<ApiRubricCriterion>('/rubric-criteria/',{method:'POST',body:JSON.stringify(p)});
