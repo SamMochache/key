@@ -36,16 +36,6 @@ class School(BaseModel):
     )
 
     website = models.URLField(
-        _("Website"),
-        blank=True,
-    )
-
-    phone_number = models.CharField(
-        max_length=30,
-        blank=True,
-    )
-
-    website = models.URLField(
         blank=True,
     )
 
