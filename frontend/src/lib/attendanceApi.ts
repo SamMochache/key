@@ -50,10 +50,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function listAttendance(params: { lessonSession?: string; lessonDate?: string } = {}) {
+export async function listAttendance(params: { lessonSession?: string; lessonDate?: string; classroom?: string; student?: string } = {}) {
   const query = new URLSearchParams();
   if (params.lessonSession) query.set('lesson_session', params.lessonSession);
   if (params.lessonDate) query.set('lesson_date', params.lessonDate);
+  if (params.classroom) query.set('classroom', params.classroom);
+  if (params.student) query.set('student', params.student);
   const suffix = query.toString() ? `?${query.toString()}` : '';
   const data = await request<{ results?: ApiAttendanceRegister[] } | ApiAttendanceRegister[]>(`/attendance/${suffix}`);
   return Array.isArray(data) ? data : data.results ?? [];
