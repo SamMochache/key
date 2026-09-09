@@ -81,7 +81,7 @@ class StudentReportView(views.APIView):
             ["Academic Year", enrollment.academic_year.name, "Term", f"Term {enrollment.term.term_number}"],
         ], [28 * mm, 67 * mm, 28 * mm, 57 * mm]))
         story.append(Spacer(1, 5 * mm))
-        story.append(summary_table([["Overall Average", f"{overall_average:.1f}%" if overall_average is not None else "—", "Attendance", f"{attendance_rate:.1f}%" if attendance_rate is not None else "—", "Assessments", str(len(submissions))]], [31 * mm, 27 * mm, 25 * mm, 27 * mm, 28 * mm, 42 * mm]))
+        story.append(summary_table(["Overall Average", f"{overall_average:.1f}%" if overall_average is not None else "—", "Attendance", f"{attendance_rate:.1f}%" if attendance_rate is not None else "—", "Assessments", str(len(submissions))], [31 * mm, 27 * mm, 25 * mm, 27 * mm, 28 * mm, 42 * mm]))
         story.append(Paragraph("Assessment Results", styles["heading"]))
         result_data = [["Assessment", "Subject", "Date", "Score"]]
         for submission in submissions:
