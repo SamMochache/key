@@ -68,6 +68,10 @@ class AssessmentSerializer(serializers.ModelSerializer):
 class AssessmentSubmissionSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(source="enrollment.student.user.full_name", read_only=True)
     admission_number = serializers.CharField(source="enrollment.student.admission_number", read_only=True)
+    assessment_title = serializers.CharField(source="assessment.title", read_only=True)
+    assessment_type = serializers.CharField(source="assessment.assessment_type", read_only=True)
+    assessment_due_date = serializers.DateField(source="assessment.due_date", read_only=True)
+    assessment_status = serializers.CharField(source="assessment.status", read_only=True)
 
     def validate(self, attrs):
         request = self.context.get("request")
@@ -105,11 +109,14 @@ class AssessmentSubmissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssessmentSubmission
         fields = [
-            "id", "assessment", "enrollment", "student_name", "admission_number",
-            "submitted_at", "submission_text", "submission_file", "submission_url",
-            "status", "is_late", "teacher_notes", "submitted_by", "created_at", "updated_at",
+            "id", "assessment", "assessment_title", "assessment_type", "assessment_due_date", "assessment_status",
+            "enrollment", "student_name", "admission_number", "submitted_at", "submission_text", "submission_file",
+            "submission_url", "status", "is_late", "teacher_notes", "submitted_by", "created_at", "updated_at",
         ]
-        read_only_fields = ["submitted_by", "created_at", "updated_at", "is_late"]
+        read_only_fields = [
+            "submitted_by", "created_at", "updated_at", "is_late", "assessment_title", "assessment_type",
+            "assessment_due_date", "assessment_status",
+        ]
 
 
 class CriterionScoreSerializer(serializers.ModelSerializer):

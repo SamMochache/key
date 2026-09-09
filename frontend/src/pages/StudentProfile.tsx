@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import {
   GlobeIcon, CakeIcon, ArrowLeftIcon, SparklesIcon, GraduationCapIcon,
   PlusIcon, XIcon, CheckCircle2Icon, Clock3Icon, XCircleIcon, ShieldCheckIcon,
-  FileTextIcon
+  FileTextIcon, ImageIcon, DownloadIcon
 } from 'lucide-react';
 import { Card, CardHeader } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -13,11 +13,13 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { cn } from '../lib/utils';
 import {
   createEnrollment, getStudent, listAcademicYears, listClassrooms, listEnrollments,
-  listTerms, updateEnrollment, listAssessments, listSubmissions, type ApiAcademicYear,
+  listTerms, updateEnrollment, listSubmissions, type ApiAcademicYear,
   type ApiClassroom, type ApiEnrollment, type ApiStudent, type ApiTerm,
-  type ApiAssessment, type ApiSubmission
+  type ApiSubmission
 } from '../lib/api';
 import { listAttendance, type ApiAttendanceRegister, type AttendanceStatus } from '../lib/attendanceApi';
+import { listPortfolioItems, type ApiPortfolioItem } from '../lib/portfolioApi';
+import { downloadPublishedAINarrativePdf, listPublishedAINarrativeReports, type PublishedAINarrativeResponse } from '../lib/reportsApi';
 
 const TABS = ['Overview', 'Enrollment', 'Attendance', 'Assessments', 'Assignments', 'Behaviour', 'Portfolio', 'Teacher Notes', 'AI Reports'];
 const selectClass = 'w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-sm text-slate-700 dark:text-slate-200 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10';
@@ -40,10 +42,15 @@ export function StudentProfile() {
   const [attendance, setAttendance] = useState<ApiAttendanceRegister[]>([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceError, setAttendanceError] = useState('');
-  const [assessments, setAssessments] = useState<ApiAssessment[]>([]);
   const [submissions, setSubmissions] = useState<ApiSubmission[]>([]);
   const [assessmentsLoading, setAssessmentsLoading] = useState(false);
   const [assessmentsError, setAssessmentsError] = useState('');
+  const [portfolioItems, setPortfolioItems] = useState<ApiPortfolioItem[]>([]);
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
+  const [portfolioError, setPortfolioError] = useState('');
+  const [publishedReports, setPublishedReports] = useState<PublishedAINarrativeResponse[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsError, setReportsError] = useState('');
 
   const loadData = async (studentId: string) => {
     const studentData = await getStudent(studentId);
@@ -57,8 +64,6 @@ export function StudentProfile() {
     let cancelled = false;
     setLoading(true);
     setError('');
-    // Scope the enrollment request by admission number instead of downloading
-    // the entire school's enrollment table for one student profile.
     Promise.resolve()
       .then(() => getStudent(id))
       .then(async (studentData) => {
@@ -88,22 +93,40 @@ export function StudentProfile() {
   }, [id, tab]);
 
   useEffect(() => {
-    if (!id || tab !== 'Assessments') return;
+    if (!id || !['Assessments', 'Assignments', 'Teacher Notes'].includes(tab)) return;
     let cancelled = false;
     setAssessmentsLoading(true);
     setAssessmentsError('');
-    Promise.all([listAssessments(), listSubmissions()])
-      .then(([assessmentData, submissionData]) => {
-        if (cancelled) return;
-        const studentSubmissions = submissionData.filter((item) => item.student_name === student?.full_name || item.admission_number === student?.admission_number);
-        const studentAssessmentIds = new Set(studentSubmissions.map((item) => item.assessment));
-        setAssessments(assessmentData.filter((item) => studentAssessmentIds.has(item.id)));
-        setSubmissions(studentSubmissions);
-      })
-      .catch((err) => { if (!cancelled) setAssessmentsError(err instanceof Error ? err.message : 'Unable to load assessments.'); })
+    listSubmissions({ student: id })
+      .then((data) => { if (!cancelled) setSubmissions(data); })
+      .catch((err) => { if (!cancelled) setAssessmentsError(err instanceof Error ? err.message : 'Unable to load assessment records.'); })
       .finally(() => { if (!cancelled) setAssessmentsLoading(false); });
     return () => { cancelled = true; };
-  }, [id, tab, student?.full_name, student?.admission_number]);
+  }, [id, tab]);
+
+  useEffect(() => {
+    if (!id || tab !== 'Portfolio') return;
+    let cancelled = false;
+    setPortfolioLoading(true);
+    setPortfolioError('');
+    listPortfolioItems({ student: id })
+      .then((data) => { if (!cancelled) setPortfolioItems(data); })
+      .catch((err) => { if (!cancelled) setPortfolioError(err instanceof Error ? err.message : 'Unable to load portfolio evidence.'); })
+      .finally(() => { if (!cancelled) setPortfolioLoading(false); });
+    return () => { cancelled = true; };
+  }, [id, tab]);
+
+  useEffect(() => {
+    if (!id || tab !== 'AI Reports') return;
+    let cancelled = false;
+    setReportsLoading(true);
+    setReportsError('');
+    listPublishedAINarrativeReports({ student: id })
+      .then((data) => { if (!cancelled) setPublishedReports(data.results); })
+      .catch((err) => { if (!cancelled) setReportsError(err instanceof Error ? err.message : 'Unable to load published AI reports.'); })
+      .finally(() => { if (!cancelled) setReportsLoading(false); });
+    return () => { cancelled = true; };
+  }, [id, tab]);
 
   const openEnrollForm = async () => {
     setFormError('');
@@ -169,14 +192,7 @@ export function StudentProfile() {
     setSaving(true);
     setFormError('');
     try {
-      await createEnrollment({
-        student: id,
-        classroom: form.classroom,
-        academic_year: form.academic_year,
-        term: form.term,
-        enrollment_date: new Date().toISOString().slice(0, 10),
-        status: 'ENROLLED'
-      });
+      await createEnrollment({ student: id, classroom: form.classroom, academic_year: form.academic_year, term: form.term, enrollment_date: new Date().toISOString().slice(0, 10), status: 'ENROLLED' });
       setShowEnrollForm(false);
       await loadData(id);
     } catch (err) {
@@ -222,7 +238,7 @@ export function StudentProfile() {
             <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4 text-sm"><Meta icon={<CakeIcon className="h-4 w-4" />} label={`${student.date_of_birth} · Age ${student.age}`} /><Meta icon={<GlobeIcon className="h-4 w-4" />} label={student.nationality} /></div>
             {currentEnrollment && <div className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/60"><GraduationCapIcon className="h-4 w-4 text-brand-500" /><span className="font-semibold text-slate-700 dark:text-slate-200">{currentEnrollment.classroom_name}</span><span className="text-slate-400">· {currentEnrollment.academic_year_name} · Term {currentEnrollment.term_number}</span></div>}
           </div>
-          <div className="flex sm:flex-col gap-3"><Link to={`/ai-reports?student=${encodeURIComponent(student.id)}`}><Button className="w-full"><SparklesIcon className="h-4 w-4" /> AI Report</Button></Link><Button variant="secondary">Message parent</Button></div>
+          <div className="flex sm:flex-col gap-3"><Link to={`/ai-reports?student=${encodeURIComponent(student.id)}`}><Button className="w-full"><SparklesIcon className="h-4 w-4" /> AI Report</Button></Link></div>
         </div>
       </Card>
 
@@ -230,34 +246,33 @@ export function StudentProfile() {
         {TABS.map((t) => <button key={t} onClick={() => setTab(t)} className={cn('shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-colors', tab === t ? 'bg-white dark:bg-slate-900 text-brand-600 shadow-soft' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300')}>{t}</button>)}
       </div>
 
-      {tab === 'Overview' && <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"><div className="lg:col-span-2 space-y-6"><Card><CardHeader title="Student Information" subtitle="Current profile data" /><div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-5 pb-5 mt-2 text-sm"><Info label="Email" value={student.email} /><Info label="Gender" value={student.gender} /><Info label="Admission date" value={student.admission_date} /><Info label="Birth certificate" value={student.birth_certificate_number || 'Not provided'} /></div></Card><Card><CardHeader title="Progress Timeline" /><EmptyState icon="Clock" title="No progress activity yet" description="Open Attendance or Assessments to view live records. Additional learning activity will appear here as those workflows are connected." /></Card></div><div className="space-y-6"><div className="grid grid-cols-2 gap-4"><StatBox label="Attendance" value="—" tone="text-emerald-600" /><StatBox label="Growth Index" value="—" tone="text-brand-600" /></div><Card className="overflow-hidden"><CardHeader title="Latest Portfolio" /><EmptyState icon="Image" title="No portfolio entries yet" /></Card></div></div>}
+      {tab === 'Overview' && <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"><div className="lg:col-span-2 space-y-6"><Card><CardHeader title="Student Information" subtitle="Current database profile" /><div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-5 pb-5 mt-2 text-sm"><Info label="Email" value={student.email} /><Info label="Gender" value={student.gender} /><Info label="Admission date" value={student.admission_date} /><Info label="Birth certificate" value={student.birth_certificate_number || 'Not provided'} /></div></Card><Card><CardHeader title="Academic placement" subtitle="Enrollment records stored for this learner" /><div className="px-5 pb-5"><Info label="Enrollment records" value={String(enrollments.length)} /><div className="mt-3 text-sm text-slate-500 dark:text-slate-400">{currentEnrollment ? `Currently enrolled in ${currentEnrollment.classroom_name} for ${currentEnrollment.academic_year_name}, Term ${currentEnrollment.term_number}.` : 'No active enrollment is recorded.'}</div></div></Card></div><div className="space-y-6"><Card><CardHeader title="Data available" /><div className="px-5 pb-5 space-y-2 text-sm text-slate-500 dark:text-slate-400"><p>Attendance, assessments, portfolio evidence, teacher notes, and published AI reports are loaded from their own tabs only.</p><p>This keeps the profile fast and avoids downloading unrelated school-wide tables.</p></div></Card></div></div>}
 
       {tab === 'Enrollment' && <Card>
         <CardHeader title="Enrollment History" subtitle="Academic placement is preserved as historical records" action={<Button type="button" variant="emerald" onClick={openEnrollForm}><PlusIcon className="h-4 w-4" /> Enroll student</Button>} />
         {showEnrollForm && <form onSubmit={submitEnrollment} className="mx-5 mb-5 rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/50"><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><Field label="Academic year"><select value={form.academic_year} onChange={(e) => changeYear(e.target.value)} className={selectClass} disabled={saving}><option value="">Select year</option>{years.map((year) => <option key={year.id} value={year.id}>{year.name}{year.is_current ? ' · Current' : ''}</option>)}</select></Field><Field label="Term"><select value={form.term} onChange={(e) => changeTerm(e.target.value)} className={selectClass} disabled={saving || !form.academic_year}><option value="">Select term</option>{terms.map((term) => <option key={term.id} value={term.id}>Term {term.term_number}{term.is_current ? ' · Current' : ''}</option>)}</select></Field><Field label="Class"><select value={form.classroom} onChange={(e) => setForm({ ...form, classroom: e.target.value })} className={selectClass} disabled={saving || !form.term}><option value="">Select class</option>{classes.map((item) => <option key={item.id} value={item.id}>{item.name}{item.student_count >= item.capacity ? ' · Full' : ''}</option>)}</select></Field></div>{formError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{formError}</p>}<div className="flex justify-end gap-3 mt-4"><Button type="button" variant="secondary" onClick={() => setShowEnrollForm(false)} disabled={saving}><XIcon className="h-4 w-4" /> Cancel</Button><Button type="submit" variant="emerald" disabled={saving}>{saving ? 'Enrolling…' : 'Confirm enrollment'}</Button></div></form>}
-        <div className="px-5 pb-5">{enrollments.length === 0 ? <EmptyState icon="GraduationCap" title="No enrollment history" description="Enroll the student into an academic year, term, and class to begin their academic record." /> : <div className="divide-y divide-slate-100 dark:divide-slate-800">{enrollments.map((item) => <div key={item.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center"><div className="flex-1 min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-slate-800 dark:text-slate-100">{item.classroom_name}</p><Badge tone={item.status === 'ENROLLED' ? 'emerald' : 'slate'}>{item.status}</Badge></div><p className="text-sm text-slate-400 mt-1">{item.academic_year_name} · Term {item.term_number} · Enrolled {item.enrollment_date}</p></div>{item.status === 'ENROLLED' && <Button type="button" variant="ghost" className="self-start sm:self-auto" disabled={actionId === item.id} onClick={() => withdrawEnrollment(item)}>{actionId === item.id ? 'Saving…' : 'Withdraw'}</Button>}</div>)}</div>}</div>
+        <div className="px-5 pb-5">{enrollments.length === 0 ? <EmptyState icon="GraduationCap" title="No enrollment history" description="No enrollment records are stored for this student." /> : <div className="divide-y divide-slate-100 dark:divide-slate-800">{enrollments.map((item) => <div key={item.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center"><div className="flex-1 min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-slate-800 dark:text-slate-100">{item.classroom_name}</p><Badge tone={item.status === 'ENROLLED' ? 'emerald' : 'slate'}>{item.status}</Badge></div><p className="text-sm text-slate-400 mt-1">{item.academic_year_name} · Term {item.term_number} · Enrolled {item.enrollment_date}</p></div>{item.status === 'ENROLLED' && <Button type="button" variant="ghost" className="self-start sm:self-auto" disabled={actionId === item.id} onClick={() => withdrawEnrollment(item)}>{actionId === item.id ? 'Saving…' : 'Withdraw'}</Button>}</div>)}</div>}</div>
       </Card>}
 
       {tab === 'Attendance' && <Card>
         <CardHeader title="Attendance history" subtitle={attendanceStats.total ? `${attendanceStats.rate}% attendance · ${attendanceStats.total} recorded lessons` : 'Attendance recorded against actual lesson sessions'} />
         {attendanceError && <div className="mx-5 mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300">{attendanceError}</div>}
-        {attendanceLoading ? <div className="px-5 py-10 text-center text-sm text-slate-500">Loading attendance…</div> : attendance.length === 0 ? <EmptyState icon="Calendar" title="No attendance records" description="No attendance has been recorded for this student yet." /> : <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 pb-5"><MiniStat icon={<CheckCircle2Icon className="h-4 w-4" />} label="Present" value={attendanceStats.PRESENT} /><MiniStat icon={<Clock3Icon className="h-4 w-4" />} label="Late" value={attendanceStats.LATE} /><MiniStat icon={<XCircleIcon className="h-4 w-4" />} label="Absent" value={attendanceStats.ABSENT} /><MiniStat icon={<ShieldCheckIcon className="h-4 w-4" />} label="Excused" value={attendanceStats.EXCUSED} /></div>
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">{attendance.map((register) => { const record = register.records.find((item) => item.student === id); if (!record) return null; return <div key={register.id} className="flex items-center gap-4 px-5 py-4"><div className="flex-1"><p className="font-semibold text-sm text-slate-800 dark:text-slate-100">{register.subject_name} · {register.classroom_name}</p><p className="text-xs text-slate-400 mt-1">{new Date(`${register.lesson_date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p></div><Badge tone={record.status === 'PRESENT' ? 'emerald' : record.status === 'LATE' ? 'warm' : record.status === 'EXCUSED' ? 'brand' : 'rose'}>{record.status}</Badge></div>; })}</div>
-        </>}
+        {attendanceLoading ? <div className="px-5 py-10 text-center text-sm text-slate-500">Loading attendance…</div> : attendance.length === 0 ? <EmptyState icon="Calendar" title="No attendance records" description="No attendance has been recorded for this student yet." /> : <><div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 pb-5"><MiniStat icon={<CheckCircle2Icon className="h-4 w-4" />} label="Present" value={attendanceStats.PRESENT} /><MiniStat icon={<Clock3Icon className="h-4 w-4" />} label="Late" value={attendanceStats.LATE} /><MiniStat icon={<XCircleIcon className="h-4 w-4" />} label="Absent" value={attendanceStats.ABSENT} /><MiniStat icon={<ShieldCheckIcon className="h-4 w-4" />} label="Excused" value={attendanceStats.EXCUSED} /></div><div className="divide-y divide-slate-100 dark:divide-slate-800">{attendance.map((register) => { const record = register.records.find((item) => item.student === id); if (!record) return null; return <div key={register.id} className="flex items-center gap-4 px-5 py-4"><div className="flex-1"><p className="font-semibold text-sm text-slate-800 dark:text-slate-100">{register.subject_name} · {register.classroom_name}</p><p className="text-xs text-slate-400 mt-1">{new Date(`${register.lesson_date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p></div><Badge tone={record.status === 'PRESENT' ? 'emerald' : record.status === 'LATE' ? 'warm' : record.status === 'EXCUSED' ? 'brand' : 'rose'}>{record.status}</Badge></div>; })}</div></>}
       </Card>}
 
-      {tab === 'Assessments' && <Card>
-        <CardHeader title="Assessment history" subtitle="Published assessments and this student's submissions" />
+      {['Assessments', 'Assignments'].includes(tab) && <Card>
+        <CardHeader title={tab === 'Assessments' ? 'Assessment history' : 'Assignments'} subtitle="Student-specific submissions returned directly by the API" />
         {assessmentsError && <div className="mx-5 mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300">{assessmentsError}</div>}
-        {assessmentsLoading ? <div className="px-5 py-10 text-center text-sm text-slate-500">Loading assessments…</div> : submissions.length === 0 ? <EmptyState icon="FileText" title="No assessment submissions" description="Published assessments will appear here once this student has a submission." /> : <div className="divide-y divide-slate-100 dark:divide-slate-800">{submissions.map((submission) => { const assessment = assessments.find((item) => item.id === submission.assessment); return <div key={submission.id} className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center"><div className="flex-1"><p className="font-semibold text-sm text-slate-800 dark:text-slate-100">{assessment?.title || 'Assessment'}</p><p className="text-xs text-slate-400 mt-1">{assessment?.assessment_type || 'Assessment'} · {assessment?.due_date ? `Due ${assessment.due_date}` : 'No due date'}</p></div><Badge tone={submission.status === 'GRADED' ? 'emerald' : submission.status === 'SUBMITTED' ? 'brand' : 'slate'}>{submission.status}</Badge></div>; })}</div>}
+        {assessmentsLoading ? <div className="px-5 py-10 text-center text-sm text-slate-500">Loading submissions…</div> : submissions.length === 0 ? <EmptyState icon="FileText" title={tab === 'Assessments' ? 'No assessment submissions' : 'No submitted assignments'} description="No records are stored for this student yet." /> : <div className="divide-y divide-slate-100 dark:divide-slate-800">{submissions.map((submission) => <div key={submission.id} className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center"><div className="flex-1"><p className="font-semibold text-sm text-slate-800 dark:text-slate-100">{submission.assessment_title || `Assessment ${submission.assessment}`}</p><p className="text-xs text-slate-400 mt-1">{submission.assessment_type || 'Assessment'}{submission.assessment_due_date ? ` · Due ${submission.assessment_due_date}` : ''}</p>{submission.teacher_notes && <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Teacher note: {submission.teacher_notes}</p>}</div><Badge tone={submission.status === 'GRADED' ? 'emerald' : submission.status === 'SUBMITTED' ? 'brand' : 'slate'}>{submission.status}</Badge></div>)}</div>}
       </Card>}
 
-      {tab === 'Assignments' && <Card><CardHeader title="Assignments" subtitle="Student work submitted through the assessment workflow" /><EmptyState icon="FileText" title="Use Assessments for submitted work" description="Assignments currently share the assessment submission workflow. Open Assessments to see published work and submission status." action={<Button type="button" variant="secondary" onClick={() => setTab('Assessments')}>View assessments</Button>} /></Card>}
-      {tab === 'Behaviour' && <Card><EmptyState icon="Heart" title="Behaviour records not available yet" description="The profile is ready for behaviour records once that backend module is introduced." /></Card>}
-      {tab === 'Portfolio' && <Card><EmptyState icon="Image" title="Portfolio records" description="Portfolio evidence is managed from the Portfolio module. This profile tab will surface those records in a later integration pass." action={<Link to="/portfolio"><Button variant="secondary">Open portfolio</Button></Link>} /></Card>}
-      {tab === 'Teacher Notes' && <Card><EmptyState icon="MessageSquare" title="Teacher notes not available yet" description="Teacher observations will appear here once the notes workflow is connected." /></Card>}
-      {tab === 'AI Reports' && <Card><CardHeader title="AI reports" subtitle="Official reports are shown after review and publication" /><div className="p-5"><p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Generate or review {student.full_name.split(' ')[0]}'s report in the AI Reports workspace. Only published reports should be visible to the student's own account.</p><Link to={`/ai-reports?student=${encodeURIComponent(student.id)}`}><Button><SparklesIcon className="h-4 w-4" /> Open AI Reports</Button></Link></div></Card>}
+      {tab === 'Behaviour' && <Card><CardHeader title="Behaviour evidence" subtitle="Only stored behaviour records are shown" /><div className="p-5"><EmptyState icon="Heart" title="No behaviour records stored" description="KEY does not currently have a dedicated behaviour-record model, so this tab does not invent or derive behaviour data from unrelated academic records." /></div></Card>}
+
+      {tab === 'Portfolio' && <Card><CardHeader title="Portfolio evidence" subtitle="Learner-specific portfolio items and attached evidence" /><div className="p-5">{portfolioError && <div className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300">{portfolioError}</div>}{portfolioLoading ? <div className="py-10 text-center text-sm text-slate-500">Loading portfolio evidence…</div> : portfolioItems.length === 0 ? <EmptyState icon="Image" title="No portfolio evidence" description="No portfolio items are stored for this student." action={<Link to="/portfolio"><Button variant="secondary">Open portfolio</Button></Link>} /> : <div className="grid gap-4 md:grid-cols-2">{portfolioItems.map((item) => <div key={item.id} className="rounded-2xl border border-slate-100 dark:border-slate-800 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-800 dark:text-slate-100">{item.title}</p><p className="text-xs text-slate-400 mt-1">{item.item_type_label} · {item.event_date}</p></div><Badge tone="slate">{item.artifacts.length} evidence</Badge></div>{item.description && <p className="text-sm text-slate-500 dark:text-slate-400 mt-3">{item.description}</p>}{item.assessment_title && <p className="text-xs text-brand-600 mt-3">Linked assessment: {item.assessment_title}</p>}</div>)}</div>}</div></Card>}
+
+      {tab === 'Teacher Notes' && <Card><CardHeader title="Teacher notes" subtitle="Notes attached to this student's assessment submissions" /><div className="p-5">{assessmentsError && <div className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300">{assessmentsError}</div>}{assessmentsLoading ? <div className="py-10 text-center text-sm text-slate-500">Loading teacher notes…</div> : submissions.filter((item) => item.teacher_notes?.trim()).length === 0 ? <EmptyState icon="MessageSquare" title="No teacher notes" description="No teacher notes are stored on this student's submissions." /> : <div className="space-y-3">{submissions.filter((item) => item.teacher_notes?.trim()).map((item) => <div key={item.id} className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4"><p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{item.assessment_title || 'Assessment'}</p><p className="text-sm text-slate-600 dark:text-slate-300 mt-2">{item.teacher_notes}</p></div>)}</div>}</div></Card>}
+
+      {tab === 'AI Reports' && <Card><CardHeader title="Published AI reports" subtitle="Only official teacher-reviewed reports are visible here" /><div className="p-5">{reportsError && <div className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300">{reportsError}</div>}{reportsLoading ? <div className="py-10 text-center text-sm text-slate-500">Loading published reports…</div> : publishedReports.length === 0 ? <EmptyState icon="Sparkles" title="No published AI reports" description="Draft and reviewed reports remain in the staff AI Reports workspace until an authorized staff member publishes them." action={<Link to={`/ai-reports?student=${encodeURIComponent(student.id)}`}><Button><SparklesIcon className="h-4 w-4" /> Open AI Reports</Button></Link>} /> : <div className="space-y-4">{publishedReports.map((report) => <div key={report.id} className="rounded-2xl border border-slate-100 dark:border-slate-800 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-slate-800 dark:text-slate-100">{report.academic_year_name} · Term {report.term_number}</p><p className="text-xs text-slate-400 mt-1">Published {report.published_at ? new Date(report.published_at).toLocaleString() : '—'}</p></div><Button variant="secondary" onClick={() => downloadPublishedAINarrativePdf(report.id)}><DownloadIcon className="h-4 w-4" /> PDF</Button></div><p className="text-sm text-slate-600 dark:text-slate-300 mt-4 leading-relaxed">{report.narrative.summary}</p></div>)}</div>}</div></Card>}
     </div>
   );
 }
@@ -265,5 +280,4 @@ export function StudentProfile() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">{label}</span>{children}</label>; }
 function Meta({ icon, label }: { icon: React.ReactNode; label: string }) { return <span className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400"><span className="text-slate-300 dark:text-slate-600">{icon}</span>{label}</span>; }
 function Info({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4"><p className="text-xs font-semibold text-slate-400">{label}</p><p className="mt-1 text-slate-700 dark:text-slate-200 break-words">{value}</p></div>; }
-function StatBox({ label, value, tone }: { label: string; value: string; tone: string }) { return <Card className="p-4 text-center"><p className={cn('font-display text-2xl font-extrabold', tone)}>{value}</p><p className="text-xs text-slate-400 font-medium mt-0.5">{label}</p></Card>; }
 function MiniStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) { return <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-3"><div className="flex items-center gap-2 text-slate-400"><span>{icon}</span><span className="text-xs font-semibold">{label}</span></div><p className="mt-1 font-display text-xl font-extrabold text-slate-800 dark:text-white">{value}</p></div>; }

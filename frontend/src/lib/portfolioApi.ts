@@ -66,9 +66,10 @@ export async function getMyPortfolio() { return request<ApiPortfolio>('/portfoli
 export async function listPortfolios() { const data = await request<Paginated<ApiPortfolio> | ApiPortfolio[]>('/portfolios/'); return Array.isArray(data) ? data : data.results; }
 export async function createPortfolio(student: string, summary = '') { return request<ApiPortfolio>('/portfolios/', { method: 'POST', body: JSON.stringify({ student, summary }) }); }
 export async function updatePortfolio(id: string, summary: string) { return request<ApiPortfolio>(`/portfolios/${id}/`, { method: 'PATCH', body: JSON.stringify({ summary }) }); }
-export async function listPortfolioItems(params: { portfolio?: string; itemType?: PortfolioItemType; search?: string } = {}) {
+export async function listPortfolioItems(params: { portfolio?: string; student?: string; itemType?: PortfolioItemType; search?: string } = {}) {
   const query = new URLSearchParams();
   if (params.portfolio) query.set('portfolio', params.portfolio);
+  if (params.student) query.set('student', params.student);
   if (params.itemType) query.set('item_type', params.itemType);
   if (params.search) query.set('search', params.search);
   const suffix = query.toString() ? `?${query.toString()}` : '';

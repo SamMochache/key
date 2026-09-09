@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CheckCircle2Icon, HistoryIcon, Loader2Icon, PencilIcon, PrinterIcon, SendIcon, SparklesIcon } from 'lucide-react';
+import { CheckCircle2Icon, HistoryIcon, Loader2Icon, PencilIcon, DownloadIcon, SendIcon, SparklesIcon } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { EmptyState } from '../components/ui/EmptyState';
-import { listAcademicYears, listStudents, listTerms, type ApiAcademicYear, type ApiStudent, type ApiTerm } from '../lib/api';
+import { getStudent, listAcademicYears, listStudents, listTerms, type ApiAcademicYear, type ApiStudent, type ApiTerm } from '../lib/api';
 import { listAINarrativeReportHistory, type AINarrativeHistoryItem } from '../lib/aiNarrativeHistoryApi';
-import { generateAINarrativeReport, listAINarrativeReports, publishAINarrativeReport, saveAINarrativeReport, type AINarrativeResponse } from '../lib/reportsApi';
+import { downloadPublishedAINarrativePdf, generateAINarrativeReport, listAINarrativeReports, publishAINarrativeReport, saveAINarrativeReport, type AINarrativeResponse } from '../lib/reportsApi';
 
 export function AIReports() {
   const [searchParams] = useSearchParams();
@@ -31,28 +31,34 @@ export function AIReports() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([listStudents({ isActive: true }), listAcademicYears()])
+    let cancelled = false;
+    setLoading(true);
+    const studentPromise = requestedStudent ? getStudent(requestedStudent).then((data) => [data]) : listStudents({ isActive: true });
+    Promise.all([studentPromise, listAcademicYears()])
       .then(([studentData, yearData]) => {
+        if (cancelled) return;
         setStudents(studentData);
         setYears(yearData);
         const currentYear = yearData.find((item) => item.is_current)?.id || yearData[0]?.id || '';
         setYear(currentYear);
-        if (requestedStudent && studentData.some((item) => item.id === requestedStudent)) {
-          setStudent(requestedStudent);
-        }
+        if (requestedStudent && studentData[0]?.id === requestedStudent) setStudent(requestedStudent);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Unable to load report options.'))
-      .finally(() => setLoading(false));
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load report options.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [requestedStudent]);
 
   useEffect(() => {
     if (!year) { setTerms([]); setTerm(''); return; }
+    let cancelled = false;
     listTerms({ academicYear: year })
       .then((data) => {
+        if (cancelled) return;
         setTerms(data);
         setTerm((current) => data.some((item) => item.id === current) ? current : (data.find((item) => item.is_current)?.id || data[0]?.id || ''));
       })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Unable to load terms.'));
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load terms.'); });
+    return () => { cancelled = true; };
   }, [year]);
 
   useEffect(() => {
@@ -148,7 +154,7 @@ export function AIReports() {
           {result.status !== 'PUBLISHED' && !editing && <Button variant="secondary" onClick={() => setEditing(true)}><PencilIcon className="h-4 w-4" /> Edit draft</Button>}
           {editing && <Button onClick={saveReview} disabled={saving}>{saving ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <CheckCircle2Icon className="h-4 w-4" />} {saving ? 'Saving…' : 'Save & mark reviewed'}</Button>}
           {result.status === 'REVIEWED' && !editing && <Button onClick={publish} disabled={publishing}>{publishing ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <SendIcon className="h-4 w-4" />} {publishing ? 'Publishing…' : 'Publish report'}</Button>}
-          <Button variant="secondary" onClick={() => window.print()}><PrinterIcon className="h-4 w-4" /> Export PDF</Button>
+          {result.status === 'PUBLISHED' && <Button variant="secondary" onClick={() => downloadPublishedAINarrativePdf(result.id)}><DownloadIcon className="h-4 w-4" /> Download PDF</Button>}
         </div> : undefined}
       />
 

@@ -99,6 +99,8 @@ class AssessmentSubmissionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
             "assessment",
             "enrollment__student__user",
             "enrollment__student__school",
+            "enrollment__academic_year",
+            "enrollment__term",
             "submitted_by",
         )
         role = get_user_role(self.request.user)
@@ -113,6 +115,12 @@ class AssessmentSubmissionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
         student_id = self.request.query_params.get("student")
         if student_id:
             queryset = queryset.filter(enrollment__student_id=student_id)
+        academic_year_id = self.request.query_params.get("academic_year")
+        if academic_year_id:
+            queryset = queryset.filter(enrollment__academic_year_id=academic_year_id)
+        term_id = self.request.query_params.get("term")
+        if term_id:
+            queryset = queryset.filter(enrollment__term_id=term_id)
         return queryset
 
     def perform_create(self, serializer):

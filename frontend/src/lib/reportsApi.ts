@@ -144,8 +144,9 @@ export async function publishAINarrativeReport(id: string) {
   return jsonRequest(`/reports/ai-narrative/${id}/publish/`, { method: 'POST' }) as Promise<AINarrativeResponse>;
 }
 
-export async function listPublishedAINarrativeReports(params: { academicYear?: string; term?: string } = {}) {
+export async function listPublishedAINarrativeReports(params: { student?: string; academicYear?: string; term?: string } = {}) {
   const query = new URLSearchParams();
+  if (params.student) query.set('student', params.student);
   if (params.academicYear) query.set('academic_year', params.academicYear);
   if (params.term) query.set('term', params.term);
   const suffix = query.toString() ? `?${query.toString()}` : '';
