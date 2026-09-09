@@ -41,12 +41,10 @@ export function Login() {
           <div className="absolute -bottom-28 -left-20 h-64 w-64 rounded-full bg-brand-500/10 blur-3xl" />
 
           <div className="relative">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-600 font-display text-lg font-extrabold shadow-lg shadow-brand-600/20">
-                K
-              </div>
+            <div className="flex items-center gap-4">
+              <img src="/key-logo.svg" alt="KEY" className="h-16 w-20 object-contain object-left" />
               <div>
-                <p className="font-display text-lg font-extrabold tracking-tight">KEY</p>
+                <p className="font-display text-xl font-extrabold tracking-tight">KEY</p>
                 <p className="text-xs font-medium text-slate-400">Key International School</p>
               </div>
             </div>
@@ -73,16 +71,8 @@ export function Login() {
 
         <div className="flex items-center px-6 py-10 sm:px-10 sm:py-12 lg:px-14">
           <div className="w-full max-w-md mx-auto">
-            <div className="mb-8 lg:hidden">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-600 font-display text-lg font-extrabold text-white">
-                  K
-                </div>
-                <div>
-                  <p className="font-display text-lg font-extrabold tracking-tight text-slate-900 dark:text-slate-100">KEY</p>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Key International School</p>
-                </div>
-              </div>
+            <div className="mb-8 flex justify-center lg:justify-start">
+              <img src="/key-logo.svg" alt="KEY" className="h-16 w-20 object-contain object-left" />
             </div>
 
             <div className="mb-8">
