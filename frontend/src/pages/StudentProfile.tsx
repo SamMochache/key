@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   GlobeIcon, CakeIcon, ArrowLeftIcon, SparklesIcon, GraduationCapIcon,
-  PlusIcon, XIcon
+  PlusIcon, XIcon, CheckCircle2Icon, Clock3Icon, XCircleIcon, ShieldCheckIcon,
+  FileTextIcon
 } from 'lucide-react';
 import { Card, CardHeader } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -12,9 +13,11 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { cn } from '../lib/utils';
 import {
   createEnrollment, getStudent, listAcademicYears, listClassrooms, listEnrollments,
-  listTerms, updateEnrollment, type ApiAcademicYear, type ApiClassroom,
-  type ApiEnrollment, type ApiStudent, type ApiTerm
+  listTerms, updateEnrollment, listAssessments, listSubmissions, type ApiAcademicYear,
+  type ApiClassroom, type ApiEnrollment, type ApiStudent, type ApiTerm,
+  type ApiAssessment, type ApiSubmission
 } from '../lib/api';
+import { listAttendance, type ApiAttendanceRegister, type AttendanceStatus } from '../lib/attendanceApi';
 
 const TABS = ['Overview', 'Enrollment', 'Attendance', 'Assessments', 'Assignments', 'Behaviour', 'Portfolio', 'Teacher Notes', 'AI Reports'];
 const selectClass = 'w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-sm text-slate-700 dark:text-slate-200 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10';
@@ -34,6 +37,13 @@ export function StudentProfile() {
   const [saving, setSaving] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
+  const [attendance, setAttendance] = useState<ApiAttendanceRegister[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceError, setAttendanceError] = useState('');
+  const [assessments, setAssessments] = useState<ApiAssessment[]>([]);
+  const [submissions, setSubmissions] = useState<ApiSubmission[]>([]);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(false);
+  const [assessmentsError, setAssessmentsError] = useState('');
 
   const loadData = async (studentId: string) => {
     const studentData = await getStudent(studentId);
@@ -47,8 +57,12 @@ export function StudentProfile() {
     let cancelled = false;
     setLoading(true);
     setError('');
-    Promise.all([getStudent(id), listEnrollments()])
-      .then(([studentData, enrollmentData]) => {
+    // Scope the enrollment request by admission number instead of downloading
+    // the entire school's enrollment table for one student profile.
+    Promise.resolve()
+      .then(() => getStudent(id))
+      .then(async (studentData) => {
+        const enrollmentData = await listEnrollments({ search: studentData.admission_number });
         if (!cancelled) {
           setStudent(studentData);
           setEnrollments(enrollmentData.filter((item) => item.student === id));
@@ -60,6 +74,36 @@ export function StudentProfile() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [id]);
+
+  useEffect(() => {
+    if (!id || tab !== 'Attendance') return;
+    let cancelled = false;
+    setAttendanceLoading(true);
+    setAttendanceError('');
+    listAttendance({ student: id })
+      .then((data) => { if (!cancelled) setAttendance(data); })
+      .catch((err) => { if (!cancelled) setAttendanceError(err instanceof Error ? err.message : 'Unable to load attendance.'); })
+      .finally(() => { if (!cancelled) setAttendanceLoading(false); });
+    return () => { cancelled = true; };
+  }, [id, tab]);
+
+  useEffect(() => {
+    if (!id || tab !== 'Assessments') return;
+    let cancelled = false;
+    setAssessmentsLoading(true);
+    setAssessmentsError('');
+    Promise.all([listAssessments(), listSubmissions()])
+      .then(([assessmentData, submissionData]) => {
+        if (cancelled) return;
+        const studentSubmissions = submissionData.filter((item) => item.student_name === student?.full_name || item.admission_number === student?.admission_number);
+        const studentAssessmentIds = new Set(studentSubmissions.map((item) => item.assessment));
+        setAssessments(assessmentData.filter((item) => studentAssessmentIds.has(item.id)));
+        setSubmissions(studentSubmissions);
+      })
+      .catch((err) => { if (!cancelled) setAssessmentsError(err instanceof Error ? err.message : 'Unable to load assessments.'); })
+      .finally(() => { if (!cancelled) setAssessmentsLoading(false); });
+    return () => { cancelled = true; };
+  }, [id, tab, student?.full_name, student?.admission_number]);
 
   const openEnrollForm = async () => {
     setFormError('');
@@ -152,6 +196,14 @@ export function StudentProfile() {
     } finally { setActionId(null); }
   };
 
+  const attendanceStats = useMemo(() => {
+    const counts: Record<AttendanceStatus, number> = { PRESENT: 0, LATE: 0, ABSENT: 0, EXCUSED: 0 };
+    attendance.forEach((register) => register.records.filter((record) => record.student === id).forEach((record) => { counts[record.status] += 1; }));
+    const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+    const attended = counts.PRESENT + counts.LATE;
+    return { ...counts, total, rate: total ? Math.round((attended / total) * 100) : null };
+  }, [attendance, id]);
+
   if (loading) return <Card className="p-8 text-center text-sm text-slate-500">Loading student…</Card>;
   if (!student) return <Card><EmptyState icon="UserX" title="Student not found" description={error || 'This student is not available to your account.'} action={<Link to="/students"><Button>Back to students</Button></Link>} /></Card>;
 
@@ -178,7 +230,7 @@ export function StudentProfile() {
         {TABS.map((t) => <button key={t} onClick={() => setTab(t)} className={cn('shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-colors', tab === t ? 'bg-white dark:bg-slate-900 text-brand-600 shadow-soft' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300')}>{t}</button>)}
       </div>
 
-      {tab === 'Overview' && <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"><div className="lg:col-span-2 space-y-6"><Card><CardHeader title="Student Information" subtitle="Current profile data" /><div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-5 pb-5 mt-2 text-sm"><Info label="Email" value={student.email} /><Info label="Gender" value={student.gender} /><Info label="Admission date" value={student.admission_date} /><Info label="Birth certificate" value={student.birth_certificate_number || 'Not provided'} /></div></Card><Card><CardHeader title="Progress Timeline" /><EmptyState icon="Clock" title="No progress activity yet" description="Assessment, attendance, portfolio and teacher activity will appear here as those modules are connected." /></Card></div><div className="space-y-6"><div className="grid grid-cols-2 gap-4"><StatBox label="Attendance" value="—" tone="text-emerald-600" /><StatBox label="Growth Index" value="—" tone="text-brand-600" /></div><Card className="overflow-hidden"><CardHeader title="Latest Portfolio" /><EmptyState icon="Image" title="No portfolio entries yet" /></Card></div></div>}
+      {tab === 'Overview' && <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"><div className="lg:col-span-2 space-y-6"><Card><CardHeader title="Student Information" subtitle="Current profile data" /><div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-5 pb-5 mt-2 text-sm"><Info label="Email" value={student.email} /><Info label="Gender" value={student.gender} /><Info label="Admission date" value={student.admission_date} /><Info label="Birth certificate" value={student.birth_certificate_number || 'Not provided'} /></div></Card><Card><CardHeader title="Progress Timeline" /><EmptyState icon="Clock" title="No progress activity yet" description="Open Attendance or Assessments to view live records. Additional learning activity will appear here as those workflows are connected." /></Card></div><div className="space-y-6"><div className="grid grid-cols-2 gap-4"><StatBox label="Attendance" value="—" tone="text-emerald-600" /><StatBox label="Growth Index" value="—" tone="text-brand-600" /></div><Card className="overflow-hidden"><CardHeader title="Latest Portfolio" /><EmptyState icon="Image" title="No portfolio entries yet" /></Card></div></div>}
 
       {tab === 'Enrollment' && <Card>
         <CardHeader title="Enrollment History" subtitle="Academic placement is preserved as historical records" action={<Button type="button" variant="emerald" onClick={openEnrollForm}><PlusIcon className="h-4 w-4" /> Enroll student</Button>} />
@@ -186,7 +238,26 @@ export function StudentProfile() {
         <div className="px-5 pb-5">{enrollments.length === 0 ? <EmptyState icon="GraduationCap" title="No enrollment history" description="Enroll the student into an academic year, term, and class to begin their academic record." /> : <div className="divide-y divide-slate-100 dark:divide-slate-800">{enrollments.map((item) => <div key={item.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center"><div className="flex-1 min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-slate-800 dark:text-slate-100">{item.classroom_name}</p><Badge tone={item.status === 'ENROLLED' ? 'emerald' : 'slate'}>{item.status}</Badge></div><p className="text-sm text-slate-400 mt-1">{item.academic_year_name} · Term {item.term_number} · Enrolled {item.enrollment_date}</p></div>{item.status === 'ENROLLED' && <Button type="button" variant="ghost" className="self-start sm:self-auto" disabled={actionId === item.id} onClick={() => withdrawEnrollment(item)}>{actionId === item.id ? 'Saving…' : 'Withdraw'}</Button>}</div>)}</div>}</div>
       </Card>}
 
-      {tab !== 'Overview' && tab !== 'Enrollment' && <Card><EmptyState icon="FolderOpen" title={`${tab} — coming into view`} description={`This module will hold ${student.full_name.split(' ')[0]}’s ${tab.toLowerCase()} once its backend workflow is connected.`} /></Card>}
+      {tab === 'Attendance' && <Card>
+        <CardHeader title="Attendance history" subtitle={attendanceStats.total ? `${attendanceStats.rate}% attendance · ${attendanceStats.total} recorded lessons` : 'Attendance recorded against actual lesson sessions'} />
+        {attendanceError && <div className="mx-5 mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300">{attendanceError}</div>}
+        {attendanceLoading ? <div className="px-5 py-10 text-center text-sm text-slate-500">Loading attendance…</div> : attendance.length === 0 ? <EmptyState icon="Calendar" title="No attendance records" description="No attendance has been recorded for this student yet." /> : <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 pb-5"><MiniStat icon={<CheckCircle2Icon className="h-4 w-4" />} label="Present" value={attendanceStats.PRESENT} /><MiniStat icon={<Clock3Icon className="h-4 w-4" />} label="Late" value={attendanceStats.LATE} /><MiniStat icon={<XCircleIcon className="h-4 w-4" />} label="Absent" value={attendanceStats.ABSENT} /><MiniStat icon={<ShieldCheckIcon className="h-4 w-4" />} label="Excused" value={attendanceStats.EXCUSED} /></div>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">{attendance.map((register) => { const record = register.records.find((item) => item.student === id); if (!record) return null; return <div key={register.id} className="flex items-center gap-4 px-5 py-4"><div className="flex-1"><p className="font-semibold text-sm text-slate-800 dark:text-slate-100">{register.subject_name} · {register.classroom_name}</p><p className="text-xs text-slate-400 mt-1">{new Date(`${register.lesson_date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p></div><Badge tone={record.status === 'PRESENT' ? 'emerald' : record.status === 'LATE' ? 'warm' : record.status === 'EXCUSED' ? 'brand' : 'rose'}>{record.status}</Badge></div>; })}</div>
+        </>}
+      </Card>}
+
+      {tab === 'Assessments' && <Card>
+        <CardHeader title="Assessment history" subtitle="Published assessments and this student's submissions" />
+        {assessmentsError && <div className="mx-5 mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300">{assessmentsError}</div>}
+        {assessmentsLoading ? <div className="px-5 py-10 text-center text-sm text-slate-500">Loading assessments…</div> : submissions.length === 0 ? <EmptyState icon="FileText" title="No assessment submissions" description="Published assessments will appear here once this student has a submission." /> : <div className="divide-y divide-slate-100 dark:divide-slate-800">{submissions.map((submission) => { const assessment = assessments.find((item) => item.id === submission.assessment); return <div key={submission.id} className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center"><div className="flex-1"><p className="font-semibold text-sm text-slate-800 dark:text-slate-100">{assessment?.title || 'Assessment'}</p><p className="text-xs text-slate-400 mt-1">{assessment?.assessment_type || 'Assessment'} · {assessment?.due_date ? `Due ${assessment.due_date}` : 'No due date'}</p></div><Badge tone={submission.status === 'GRADED' ? 'emerald' : submission.status === 'SUBMITTED' ? 'brand' : 'slate'}>{submission.status}</Badge></div>; })}</div>}
+      </Card>}
+
+      {tab === 'Assignments' && <Card><CardHeader title="Assignments" subtitle="Student work submitted through the assessment workflow" /><EmptyState icon="FileText" title="Use Assessments for submitted work" description="Assignments currently share the assessment submission workflow. Open Assessments to see published work and submission status." action={<Button type="button" variant="secondary" onClick={() => setTab('Assessments')}>View assessments</Button>} /></Card>}
+      {tab === 'Behaviour' && <Card><EmptyState icon="Heart" title="Behaviour records not available yet" description="The profile is ready for behaviour records once that backend module is introduced." /></Card>}
+      {tab === 'Portfolio' && <Card><EmptyState icon="Image" title="Portfolio records" description="Portfolio evidence is managed from the Portfolio module. This profile tab will surface those records in a later integration pass." action={<Link to="/portfolio"><Button variant="secondary">Open portfolio</Button></Link>} /></Card>}
+      {tab === 'Teacher Notes' && <Card><EmptyState icon="MessageSquare" title="Teacher notes not available yet" description="Teacher observations will appear here once the notes workflow is connected." /></Card>}
+      {tab === 'AI Reports' && <Card><CardHeader title="AI reports" subtitle="Official reports are shown after review and publication" /><div className="p-5"><p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Generate or review {student.full_name.split(' ')[0]}'s report in the AI Reports workspace. Only published reports should be visible to the student's own account.</p><Link to={`/ai-reports?student=${encodeURIComponent(student.id)}`}><Button><SparklesIcon className="h-4 w-4" /> Open AI Reports</Button></Link></div></Card>}
     </div>
   );
 }
@@ -195,3 +266,4 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function Meta({ icon, label }: { icon: React.ReactNode; label: string }) { return <span className="inline-flex items-center gap-2 text-slate-500 dark:text-slate-400"><span className="text-slate-300 dark:text-slate-600">{icon}</span>{label}</span>; }
 function Info({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4"><p className="text-xs font-semibold text-slate-400">{label}</p><p className="mt-1 text-slate-700 dark:text-slate-200 break-words">{value}</p></div>; }
 function StatBox({ label, value, tone }: { label: string; value: string; tone: string }) { return <Card className="p-4 text-center"><p className={cn('font-display text-2xl font-extrabold', tone)}>{value}</p><p className="text-xs text-slate-400 font-medium mt-0.5">{label}</p></Card>; }
+function MiniStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) { return <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-3"><div className="flex items-center gap-2 text-slate-400"><span>{icon}</span><span className="text-xs font-semibold">{label}</span></div><p className="mt-1 font-display text-xl font-extrabold text-slate-800 dark:text-white">{value}</p></div>; }
