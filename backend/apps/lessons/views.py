@@ -35,10 +35,7 @@ def is_platform_admin(user):
 
 def is_admin(user):
     school_admin = getattr(user, "school_admin_profile", None)
-    return bool(
-        is_platform_admin(user)
-        or (school_admin is not None and school_admin.is_active)
-    )
+    return bool(is_platform_admin(user) or (school_admin is not None and school_admin.is_active))
 
 
 def weekday_for(day):
@@ -134,10 +131,6 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="sync-day")
     def sync_day(self, request):
-        teacher = getattr(request.user, "teacher_profile", None)
-        if teacher is None:
-            raise PermissionDenied("Only teacher accounts can sync timetable lessons.")
-
         raw_date = request.data.get("lesson_date")
         if raw_date:
             try:
@@ -151,20 +144,36 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
         if weekday is None:
             return Response({"created": 0, "lesson_date": lesson_date, "lessons": []})
 
+        school_id = school_id_for(request.user)
         entries = TimetableEntry.objects.select_related(
             "timetable__term",
             "teacher_subject__teacher__user",
         ).filter(
-            timetable__school_id=teacher.school_id,
             timetable__status=TimetableStatus.PUBLISHED,
             timetable__effective_from__lte=lesson_date,
             timetable__term__start_date__lte=lesson_date,
             timetable__term__end_date__gte=lesson_date,
             weekday=weekday,
             classroom__is_active=True,
-            teacher_subject__teacher=teacher,
             teacher_subject__is_active=True,
         ).filter(Q(timetable__effective_to__isnull=True) | Q(timetable__effective_to__gte=lesson_date))
+
+        if is_platform_admin(request.user):
+            requested_school = request.data.get("school")
+            if requested_school:
+                entries = entries.filter(timetable__school_id=requested_school)
+        elif school_id:
+            entries = entries.filter(timetable__school_id=school_id)
+            # A teacher may sync only their own timetable. A school administrator
+            # may sync the school's published timetable so the admin Lessons and
+            # Attendance screens can bootstrap missing daily sessions.
+            if not is_admin(request.user):
+                teacher = getattr(request.user, "teacher_profile", None)
+                if teacher is None:
+                    raise PermissionDenied("A teacher or administrator account is required to sync lessons.")
+                entries = entries.filter(teacher_subject__teacher=teacher)
+        else:
+            raise PermissionDenied("Your account is not associated with a school.")
 
         created_count = 0
         lesson_ids = []
@@ -174,7 +183,7 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
                     timetable_entry=entry,
                     lesson_date=lesson_date,
                     defaults={
-                        "teacher": request.user,
+                        "teacher": entry.teacher_subject.teacher.user,
                         "status": LessonSession.Status.SCHEDULED,
                     },
                 )
