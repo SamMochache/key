@@ -94,6 +94,8 @@ class AcademicYearViewSet(SchoolScopedViewSet):
 
 class TermViewSet(SchoolScopedViewSet):
     serializer_class = TermSerializer
+    # Term belongs to AcademicYear; the school scope therefore traverses the relation.
+    school_field = "academic_year__school"
 
     def get_queryset(self):
         queryset = Term.objects.select_related("academic_year", "academic_year__school").all()
