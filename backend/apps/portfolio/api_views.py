@@ -69,10 +69,13 @@ class PortfolioItemViewSet(PortfolioAccessMixin, viewsets.ModelViewSet):
         item_type = self.request.query_params.get("item_type")
         search = self.request.query_params.get("search")
         portfolio = self.request.query_params.get("portfolio")
+        student = self.request.query_params.get("student")
         if item_type:
             qs = qs.filter(item_type=item_type)
         if portfolio:
             qs = qs.filter(portfolio_id=portfolio)
+        if student:
+            qs = qs.filter(portfolio__student_id=student)
         if search:
             qs = qs.filter(Q(title__icontains=search) | Q(description__icontains=search))
         return qs
