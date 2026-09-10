@@ -70,7 +70,7 @@ export function Assessments() {
         listAssessments(),
         listSubmissions(),
         listLessons(),
-        listEnrollments({ status: 'ACTIVE' }),
+        listEnrollments({ status: 'ENROLLED' }),
       ]);
       setUser(me);
       setAssessments(a);
