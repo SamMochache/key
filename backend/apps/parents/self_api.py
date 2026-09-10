@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.db.models import Avg
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
@@ -10,6 +12,13 @@ from apps.enrollment.models import Enrollment
 from apps.portfolio.models import PortfolioItem
 
 from .models import ParentStudentRelationship
+
+
+def student_age(date_of_birth):
+    today = date.today()
+    birthday = (today.month, today.day)
+    born_birthday = (date_of_birth.month, date_of_birth.day)
+    return today.year - date_of_birth.year - int(birthday < born_birthday)
 
 
 class ParentChildrenView(views.APIView):
@@ -65,7 +74,7 @@ class ParentChildrenView(views.APIView):
                 "profile_photo": profile_photo,
                 "admission_number": student.admission_number,
                 "date_of_birth": student.date_of_birth,
-                "age": student.age,
+                "age": student_age(student.date_of_birth),
                 "school": str(student.school_id),
                 "school_name": student.school.name,
                 "relationship": relationship.relationship,
