@@ -6,7 +6,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { EmptyState } from '../components/ui/EmptyState';
-import { getStudent, listAcademicYears, listStudents, listTerms, type ApiAcademicYear, type ApiStudent, type ApiTerm } from '../lib/api';
+import { listAcademicYears, listStudents, listTerms, type ApiAcademicYear, type ApiStudent, type ApiTerm } from '../lib/api';
 import { listAINarrativeReportHistory, type AINarrativeHistoryItem } from '../lib/aiNarrativeHistoryApi';
 import { downloadPublishedAINarrativePdf, generateAINarrativeReport, listAINarrativeReports, publishAINarrativeReport, saveAINarrativeReport, type AINarrativeResponse } from '../lib/reportsApi';
 
@@ -33,20 +33,17 @@ export function AIReports() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    const studentPromise = requestedStudent ? getStudent(requestedStudent).then((data) => [data]) : listStudents({ isActive: true });
-    Promise.all([studentPromise, listAcademicYears()])
-      .then(([studentData, yearData]) => {
+    listAcademicYears()
+      .then((yearData) => {
         if (cancelled) return;
-        setStudents(studentData);
         setYears(yearData);
         const currentYear = yearData.find((item) => item.is_current)?.id || yearData[0]?.id || '';
         setYear(currentYear);
-        if (requestedStudent && studentData[0]?.id === requestedStudent) setStudent(requestedStudent);
       })
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load report options.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [requestedStudent]);
+  }, []);
 
   useEffect(() => {
     if (!year) { setTerms([]); setTerm(''); return; }
@@ -60,6 +57,25 @@ export function AIReports() {
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load terms.'); });
     return () => { cancelled = true; };
   }, [year]);
+
+  useEffect(() => {
+    if (!year || !term) { setStudents([]); setStudent(''); return; }
+    let cancelled = false;
+    setLoading(true);
+    listStudents({ isActive: true, academicYear: year, term })
+      .then((data) => {
+        if (cancelled) return;
+        setStudents(data);
+        const requested = requestedStudent && data.some((item) => item.id === requestedStudent) ? requestedStudent : '';
+        setStudent((current) => {
+          if (requested) return requested;
+          return data.some((item) => item.id === current) ? current : '';
+        });
+      })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load enrolled learners.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [year, term, requestedStudent]);
 
   useEffect(() => {
     if (!student || !year || !term) { setResult(null); setHistory([]); return; }
