@@ -1,9 +1,20 @@
 from rest_framework import permissions, viewsets
 
 from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from apps.enrollment.models import Enrollment
+from core.constants.enrollment import EnrollmentStatus
 
 from .models import Student
 from .serializers import StudentSerializer
+
+
+REPORTABLE_ENROLLMENT_STATUSES = [
+    EnrollmentStatus.ENROLLED,
+    EnrollmentStatus.PROMOTED,
+    EnrollmentStatus.TRANSFERRED,
+    EnrollmentStatus.WITHDRAWN,
+    EnrollmentStatus.GRADUATED,
+]
 
 
 class StudentAccessPermission(permissions.BasePermission):
@@ -43,7 +54,7 @@ class StudentAccessPermission(permissions.BasePermission):
 
 
 class StudentViewSet(viewsets.ModelViewSet):
-    """Student directory with institution and teacher-assignment isolation."""
+    """Student directory with institution, teacher, and enrollment isolation."""
 
     serializer_class = StudentSerializer
     permission_classes = [StudentAccessPermission]
@@ -86,5 +97,15 @@ class StudentViewSet(viewsets.ModelViewSet):
         active = self.request.query_params.get("is_active")
         if active in {"true", "false"}:
             queryset = queryset.filter(is_active=active == "true")
+
+        academic_year = self.request.query_params.get("academic_year", "").strip()
+        term = self.request.query_params.get("term", "").strip()
+        if academic_year or term:
+            enrollment_filter = {"status__in": REPORTABLE_ENROLLMENT_STATUSES}
+            if academic_year:
+                enrollment_filter["academic_year_id"] = academic_year
+            if term:
+                enrollment_filter["term_id"] = term
+            queryset = queryset.filter(enrollments__in=Enrollment.objects.filter(**enrollment_filter)).distinct()
 
         return queryset
