@@ -51,7 +51,11 @@ class PortfolioViewSet(PortfolioAccessMixin, viewsets.ModelViewSet):
             raise PermissionDenied("Only staff can create portfolios for learners.")
         student = serializer.validated_data["student"]
         if role == UserRole.TEACHER:
-            if not self.scoped_portfolios().filter(student_id=student.id).exists():
+            teacher = getattr(self.request.user, "teacher_profile", None)
+            if teacher is None or not student.enrollments.filter(
+                classroom__teacher_assignments__teacher_id=teacher.id,
+                classroom__teacher_assignments__is_active=True,
+            ).exists():
                 raise PermissionDenied("You can only create a portfolio for a learner in an assigned classroom.")
         serializer.save()
 
