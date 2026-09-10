@@ -1,6 +1,8 @@
 from io import BytesIO
 
 from django.http import FileResponse, JsonResponse
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, Spacer
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
 
