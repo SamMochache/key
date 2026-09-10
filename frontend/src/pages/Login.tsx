@@ -44,8 +44,8 @@ export function Login() {
             <div className="flex items-center gap-4">
               <img src="/key-logo.svg" alt="KEY" className="h-16 w-20 object-contain object-left" />
               <div>
-                <p className="font-display text-xl font-extrabold tracking-tight">KEY</p>
-                <p className="text-xs font-medium text-slate-400">Key International School</p>
+                <p className="font-display text-xl font-extrabold tracking-tight">STEMFORGE</p>
+                <p className="text-xs font-medium text-slate-400">Key Organization</p>
               </div>
             </div>
 
