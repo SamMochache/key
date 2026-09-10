@@ -112,7 +112,7 @@ class CambridgeStageSerializer(serializers.ModelSerializer):
 class MontessoriLevelSerializer(serializers.ModelSerializer):
     class Meta:
         model = MontessoriLevel
-        fields = ["id", "name", "code", "minimum_age", "maximum_age", "description", "display_order", "created_at", "updated_at"]
+        fields = ["id", "name", "code", "minimum_age", "maximum_age", "description", "display_order", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
