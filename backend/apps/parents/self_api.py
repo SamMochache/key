@@ -1,11 +1,11 @@
 from datetime import date
 
-from django.db.models import Avg, Prefetch
+from django.db.models import Prefetch
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from apps.assessments.models import AssessmentEvaluation
+from apps.assessments.models import AssessmentSubmission
 from apps.assessments.permissions import UserRole, get_user_role
 from apps.attendance.models import AttendanceRecord
 from apps.enrollment.models import Enrollment
@@ -42,11 +42,13 @@ class ParentChildrenView(views.APIView):
             ),
             Prefetch(
                 "assessment_submissions",
-                queryset=AssessmentEvaluation.objects.filter(
-                    published=True,
-                    percentage__isnull=False,
-                ).only("id", "submission_id", "percentage"),
-                to_attr="prefetched_evaluations",
+                queryset=AssessmentSubmission.objects.filter(
+                    evaluation__published=True,
+                    evaluation__percentage__isnull=False,
+                ).select_related("evaluation").only(
+                    "id", "enrollment_id", "evaluation__id", "evaluation__percentage"
+                ),
+                to_attr="prefetched_submissions",
             ),
         ).order_by("-academic_year__start_date", "-term__term_number")
 
@@ -81,9 +83,10 @@ class ParentChildrenView(views.APIView):
                     1 for record in records if record.status in {"PRESENT", "LATE"}
                 )
                 percentages.extend(
-                    float(evaluation.percentage)
-                    for evaluation in getattr(child_enrollment, "prefetched_evaluations", [])
-                    if evaluation.percentage is not None
+                    float(submission.evaluation.percentage)
+                    for submission in getattr(child_enrollment, "prefetched_submissions", [])
+                    if getattr(submission, "evaluation", None) is not None
+                    and submission.evaluation.percentage is not None
                 )
 
             attendance_rate = round(attendance_present * 100 / attendance_total, 1) if attendance_total else None
