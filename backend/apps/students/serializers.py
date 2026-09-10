@@ -48,6 +48,7 @@ class StudentSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         school = attrs.get("school") or getattr(self.instance, "school", None)
         admission_number = attrs.get("admission_number")
+        user_data = attrs.get("user", {})
 
         if school is not None and request is not None:
             user = request.user
@@ -67,12 +68,16 @@ class StudentSerializer(serializers.ModelSerializer):
                 )
 
         if self.instance is None:
-            required = ("first_name", "last_name", "account_email", "password")
-            missing = [field for field in required if not attrs.get(field)]
+            required_user_fields = ("first_name", "last_name", "account_email")
+            missing = [field for field in required_user_fields if not user_data.get(field)]
+            if not attrs.get("password"):
+                missing.append("password")
             if missing:
-                raise serializers.ValidationError({field: "This field is required when creating a student." for field in missing})
+                raise serializers.ValidationError({
+                    field: "This field is required when creating a student."
+                    for field in missing
+                })
         else:
-            user_data = attrs.get("user", {})
             if "account_email" in user_data:
                 qs = User.objects.filter(email=user_data["account_email"])
                 if qs.exclude(pk=self.instance.user_id).exists():
