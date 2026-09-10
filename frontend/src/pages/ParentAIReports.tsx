@@ -20,13 +20,59 @@ export function ParentAIReports() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([listPublishedAINarrativeReports(), listMyChildren()])
-      .then(([reportData, linkedChildren]) => {
-        setReports(reportData.results);
+    let cancelled = false;
+
+    const loadReports = async () => {
+      try {
+        // Resolve the parent's authorized learners first. Each learner ID is
+        // then used explicitly when requesting published AI reports. This
+        // keeps the UI aligned with the same database identity edge used by
+        // the backend: parent relationship -> Student.id -> AI report.
+        const linkedChildren = await listMyChildren();
+        if (cancelled) return;
         setChildren(linkedChildren);
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Unable to load learner reports.'))
-      .finally(() => setLoading(false));
+
+        const authorizedChildren = linkedChildren.filter((child) => child.can_view_reports);
+        const responses = await Promise.allSettled(
+          authorizedChildren.map((child) =>
+            listPublishedAINarrativeReports({ student: child.id }),
+          ),
+        );
+
+        if (cancelled) return;
+
+        const successfulReports = responses
+          .filter((result): result is PromiseFulfilledResult<{ results: PublishedAINarrativeResponse[] }> => result.status === 'fulfilled')
+          .flatMap((result) => result.value.results);
+
+        // A report should be unique by its database ID even if the API ever
+        // returns overlapping results for a learner.
+        const uniqueReports = Array.from(
+          new Map(successfulReports.map((report) => [report.id, report])).values(),
+        );
+        setReports(uniqueReports);
+
+        const failedRequests = responses.filter((result) => result.status === 'rejected');
+        if (failedRequests.length > 0) {
+          setError(
+            uniqueReports.length > 0
+              ? 'Some learner AI reports could not be loaded. The reports that are available are shown below.'
+              : 'Unable to load published AI narrative reports right now. Please try again shortly.',
+          );
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Unable to load learner reports.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadReports();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const downloadAI = async (id: string) => {
