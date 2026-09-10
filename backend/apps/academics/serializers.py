@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from apps.teachers.models import Teacher
 
-from .models import AcademicYear, Classroom, ClassroomTeacherAssignment, Curriculum, MontessoriLevel, Programme, StageSubject, Subject, Term
+from .models import AcademicYear, CambridgeStage, Classroom, ClassroomTeacherAssignment, Curriculum, MontessoriLevel, Programme, StageSubject, Subject, Term
 
 
 def _request_user_school(serializer):
@@ -128,69 +128,3 @@ class StageSubjectSerializer(serializers.ModelSerializer):
 
 class ClassroomSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source="school.name", read_only=True)
-    academic_year_name = serializers.CharField(source="academic_year.name", read_only=True)
-    term_number = serializers.IntegerField(source="term.term_number", read_only=True)
-    term_name = serializers.SerializerMethodField()
-    stage_name = serializers.CharField(source="cambridge_stage.name", read_only=True)
-    montessori_level_name = serializers.CharField(source="montessori_level.name", read_only=True)
-    student_count = serializers.IntegerField(read_only=True)
-    subject_count = serializers.IntegerField(read_only=True)
-    primary_teacher = serializers.PrimaryKeyRelatedField(queryset=Teacher.objects.select_related("user"), required=False, allow_null=True, write_only=True)
-    primary_teacher_id = serializers.SerializerMethodField()
-    primary_teacher_name = serializers.SerializerMethodField()
-
-    def get_term_name(self, obj):
-        return str(obj.term)
-
-    def _primary_assignment(self, obj):
-        return next((assignment for assignment in obj.teacher_assignments.all() if assignment.role == ClassroomTeacherAssignment.Role.PRIMARY and assignment.is_active), None)
-
-    def get_primary_teacher_id(self, obj):
-        assignment = self._primary_assignment(obj)
-        return str(assignment.teacher_id) if assignment else None
-
-    def get_primary_teacher_name(self, obj):
-        assignment = self._primary_assignment(obj)
-        return assignment.teacher.user.full_name if assignment else None
-
-    def validate(self, attrs):
-        school = attrs.get("school", getattr(self.instance, "school", None))
-        user_school = _request_user_school(self)
-        if not _is_platform_admin(self) and user_school is not None and school is not None and school.id != user_school.id:
-            raise serializers.ValidationError({"school": "Classes must belong to your institution."})
-        teacher = attrs.get("primary_teacher")
-        if teacher is not None and school is not None and teacher.school_id != school.id:
-            raise serializers.ValidationError({"primary_teacher": "Teacher must belong to the same institution as the class."})
-        if teacher is not None and teacher.status != "ACTIVE":
-            raise serializers.ValidationError({"primary_teacher": "Only active teachers can be assigned as class teachers."})
-        academic_year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
-        term = attrs.get("term", getattr(self.instance, "term", None))
-        stage = attrs.get("cambridge_stage", getattr(self.instance, "cambridge_stage", None))
-        if academic_year and school and academic_year.school_id != school.id:
-            raise serializers.ValidationError({"academic_year": "Academic year must belong to the same institution."})
-        if term and academic_year and term.academic_year_id != academic_year.id:
-            raise serializers.ValidationError({"term": "Term must belong to the selected academic year."})
-        if stage is not None and not stage.is_active:
-            raise serializers.ValidationError({"cambridge_stage": "Only active Cambridge stages can be assigned to a class."})
-        return attrs
-
-    def create(self, validated_data):
-        teacher = validated_data.pop("primary_teacher", None)
-        classroom = Classroom.objects.create(**validated_data)
-        if teacher is not None:
-            ClassroomTeacherAssignment.objects.create(classroom=classroom, teacher=teacher, role=ClassroomTeacherAssignment.Role.PRIMARY)
-        return classroom
-
-    def update(self, instance, validated_data):
-        teacher = validated_data.pop("primary_teacher", serializers.empty)
-        classroom = super().update(instance, validated_data)
-        if teacher is not serializers.empty:
-            ClassroomTeacherAssignment.objects.filter(classroom=classroom, role=ClassroomTeacherAssignment.Role.PRIMARY, is_active=True).update(is_active=False)
-            if teacher is not None:
-                ClassroomTeacherAssignment.objects.update_or_create(classroom=classroom, teacher=teacher, role=ClassroomTeacherAssignment.Role.PRIMARY, defaults={"is_active": True})
-        return classroom
-
-    class Meta:
-        model = Classroom
-        fields = ["id", "school", "school_name", "academic_year", "academic_year_name", "term", "term_number", "term_name", "cambridge_stage", "stage_name", "montessori_level", "montessori_level_name", "name", "code", "capacity", "student_count", "subject_count", "primary_teacher", "primary_teacher_id", "primary_teacher_name", "is_active", "created_at", "updated_at"]
-        read_only_fields = ["id", "school_name", "academic_year_name", "term_number", "term_name", "stage_name", "montessori_level_name", "student_count", "subject_count", "primary_teacher_id", "primary_teacher_name", "created_at", "updated_at"]
