@@ -27,20 +27,236 @@ import {
 import { listTeachers, type ApiTeacher } from '../lib/api';
 
 const types = ['ASSIGNMENT', 'QUIZ', 'PROJECT', 'PRACTICAL', 'PRESENTATION', 'OBSERVATION', 'HOMEWORK', 'PORTFOLIO'];
-function formatDate(value: string | null) { if (!value) return 'No due date'; return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${value}T00:00:00`)); }
-function label(value: string) { return value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()); }
+
+function formatDate(value: string | null) {
+  if (!value) return 'No due date';
+  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${value}T00:00:00`));
+}
+
+function label(value: string) {
+  return value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export function Assessments() {
-  const [user, setUser] = useState<CurrentUser | null>(null); const [assessments, setAssessments] = useState<ApiAssessment[]>([]); const [submissions, setSubmissions] = useState<ApiSubmission[]>([]); const [lessons, setLessons] = useState<ApiLesson[]>([]); const [teachers, setTeachers] = useState<ApiTeacher[]>([]); const [enrollments, setEnrollments] = useState<Awaited<ReturnType<typeof listEnrollments>>>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [selectedAssessment, setSelectedAssessment] = useState<ApiAssessment | null>(null); const [selectedSubmission, setSelectedSubmission] = useState<ApiSubmission | null>(null); const [evaluations, setEvaluations] = useState<ApiEvaluation[]>([]); const [modal, setModal] = useState<'create' | 'submit' | 'grade' | null>(null); const [saving, setSaving] = useState(false); const [message, setMessage] = useState(''); const [form, setForm] = useState({ title: '', description: '', type: 'ASSIGNMENT', lesson: '', dueDate: '', maximumScore: '100', teacher: '' }); const [submissionText, setSubmissionText] = useState(''); const [score, setScore] = useState(''); const [feedback, setFeedback] = useState(''); const [narrative, setNarrative] = useState('');
-  const isTeacher = user?.role === 'teacher'; const isAdmin = user?.role === 'admin'; const isStudent = user?.role === 'student';
-  async function load() { setLoading(true); setError(''); try { const [me, a, s, l, e] = await Promise.all([getCurrentUser(), listAssessments(), listSubmissions(), listLessons(), listEnrollments({ status: 'ENROLLED' })]); setUser(me); setAssessments(a); setSubmissions(s); setLessons(l); setEnrollments(e); if (me.role === 'admin') setTeachers(await listTeachers({ status: 'ACTIVE' })); else setTeachers([]); } catch (err) { setError(err instanceof Error ? err.message : 'Unable to load assessments.'); } finally { setLoading(false); } }
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [assessments, setAssessments] = useState<ApiAssessment[]>([]);
+  const [submissions, setSubmissions] = useState<ApiSubmission[]>([]);
+  const [lessons, setLessons] = useState<ApiLesson[]>([]);
+  const [teachers, setTeachers] = useState<ApiTeacher[]>([]);
+  const [enrollments, setEnrollments] = useState<Awaited<ReturnType<typeof listEnrollments>>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selectedAssessment, setSelectedAssessment] = useState<ApiAssessment | null>(null);
+  const [selectedSubmission, setSelectedSubmission] = useState<ApiSubmission | null>(null);
+  const [evaluations, setEvaluations] = useState<ApiEvaluation[]>([]);
+  const [modal, setModal] = useState<'create' | 'submit' | 'grade' | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [form, setForm] = useState({ title: '', description: '', type: 'ASSIGNMENT', lesson: '', dueDate: '', maximumScore: '100', teacher: '' });
+  const [submissionText, setSubmissionText] = useState('');
+  const [score, setScore] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [narrative, setNarrative] = useState('');
+
+  const isTeacher = user?.role === 'teacher';
+  const isAdmin = user?.role === 'admin';
+  const isStudent = user?.role === 'student';
+
+  async function load() {
+    setLoading(true);
+    setError('');
+    try {
+      const [me, a, s, l, e] = await Promise.all([
+        getCurrentUser(),
+        listAssessments(),
+        listSubmissions(),
+        listLessons(),
+        listEnrollments({ status: 'ENROLLED' }),
+      ]);
+      setUser(me);
+      setAssessments(a);
+      setSubmissions(s);
+      setLessons(l);
+      setEnrollments(e);
+      if (me.role === 'admin') setTeachers(await listTeachers({ status: 'ACTIVE' }));
+      else setTeachers([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load assessments.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => { void load(); }, []);
-  const visibleAssessments = useMemo(() => !isStudent ? assessments : assessments.filter((a) => a.status === 'PUBLISHED'), [assessments, isStudent]);
-  const stats = useMemo(() => ({ total: assessments.length, published: assessments.filter((a) => a.status === 'PUBLISHED').length, submissions: submissions.length, graded: submissions.filter((s) => s.status === 'GRADED').length }), [assessments, submissions]);
-  async function handleCreate(e: React.FormEvent) { e.preventDefault(); if (!form.lesson || !form.title.trim()) return; setSaving(true); setError(''); try { const payload: Record<string, unknown> = { lesson_session: form.lesson, title: form.title.trim(), description: form.description.trim(), assessment_type: form.type, due_date: form.dueDate || null, maximum_score: form.maximumScore ? Number(form.maximumScore) : null, allow_resubmission: false }; if (isAdmin) payload.teacher = form.teacher; const created = await createAssessment(payload); const rubric = await createRubric({ assessment: created.id, title: `${created.title} Rubric`, description: 'Assessment scoring rubric' }); await createRubricCriterion({ rubric: rubric.id, title: 'Overall performance', description: 'Demonstrates the expected learning outcome.', maximum_score: Number(form.maximumScore || 100), sequence: 1 }); const refreshed = await listAssessments(); setAssessments(refreshed); setSelectedAssessment(refreshed.find((a) => a.id === created.id) || created); setModal(null); setMessage('Assessment created as a draft with a scoring rubric.'); } catch (err) { setError(err instanceof Error ? err.message : 'Unable to create assessment.'); } finally { setSaving(false); } }
-  async function publishAssessment(assessment: ApiAssessment) { setSaving(true); setError(''); try { await updateAssessment(assessment.id, { status: 'PUBLISHED' }); setAssessments(await listAssessments()); setMessage('Assessment published. Students can now submit work.'); } catch (err) { setError(err instanceof Error ? err.message : 'Unable to publish assessment.'); } finally { setSaving(false); } }
-  async function openSubmit(assessment: ApiAssessment) { setSelectedAssessment(assessment); const existing = submissions.find((s) => s.assessment === assessment.id); setSubmissionText(existing?.submission_text || ''); setModal('submit'); }
-  async function handleSubmit(e: React.FormEvent) { e.preventDefault(); if (!selectedAssessment) return; const lesson = lessons.find((l) => l.id === selectedAssessment.lesson_session); const enrollment = enrollments.find((item) => !lesson || item.classroom === lesson.classroom); if (!enrollment) { setError('No active enrollment was found for this assessment class.'); return; } setSaving(true); setError(''); try { const existing = submissions.find((s) => s.assessment === selectedAssessment.id); const payload = { assessment: selectedAssessment.id, enrollment: enrollment.id, submission_text: submissionText.trim(), status: 'SUBMITTED' }; if (existing) { setError('A submission already exists. Edit/resubmission can be enabled by the teacher when required.'); } else { await requestSubmission(payload); setSubmissions(await listSubmissions()); setModal(null); setMessage('Submission saved successfully.'); } } catch (err) { setError(err instanceof Error ? err.message : 'Unable to submit work.'); } finally { setSaving(false); } }
-  async function openGrade(submission: ApiSubmission) { setSelectedSubmission(submission); setSelectedAssessment(assessments.find((a) => a.id === submission.assessment) || null); setScore(''); setFeedback(''); setNarrative(''); setError(''); try { setEvaluations(await listEvaluations(submission.id)); } catch { setEvaluations([]); } setModal('grade'); }
-  async function handleGrade(e: React.FormEvent) { e.preventDefault(); if (!selectedSubmission || !selectedAssessment?.rubric?.criteria?.length) { setError('This assessment has no rubric criterion to score.'); return; } const criterion = selectedAssessment.rubric.criteria[0]; setSaving(true); setError(''); try { let evaluation = evaluations[0]; if (!evaluation) evaluation = await createEvaluation({ submission: selectedSubmission.id, narrative_feedback: narrative }); const existingScore = evaluation.criterion_scores.find((item) => item.criterion === criterion.id); if (existingScore) await updateCriterionScore(existingScore.id, { score: Number(score), feedback }); else await createCriterionScore({ evaluation: evaluation.id, criterion: criterion.id, score: Number(score), feedback }); await updateEvaluation(evaluation.id, { narrative_feedback: narrative }); await publishEvaluation(evaluation.id); setSubmissions(await listSubmissions()); setModal(null); setMessage('Grade saved and published to the student.'); } catch (err) { setError(err instanceof Error ? err.message : 'Unable to save grade.'); } finally { setSaving(false); } }
-  return <div><PageHeader title="Assessments" description="Create, submit, score, and publish evidence of learning from real lesson activity." />{error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}{message && <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>}<div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6"><StatCard label="Assessments" value={stats.total} icon="ClipboardCheck" tone="brand" /><StatCard label="Published" value={stats.published} icon="Send" tone="emerald" /><StatCard label="Submissions" value={stats.submissions} icon="FileText" tone="warm" /><StatCard label="Graded" value={stats.graded} icon="Award" tone="emerald" /></div>{(isTeacher || isAdmin) && <div className="mb-6 flex justify-end"><Button onClick={() => { setForm({ title: '', description: '', type: 'ASSIGNMENT', lesson: lessons[0]?.id || '', dueDate: '', maximumScore: '100', teacher: teachers[0]?.id || '' }); setModal('create'); }}>Create Assessment</Button></div>}<Card className="overflow-hidden"><CardHeader title={isStudent ? 'Available Assessments' : 'Assessment Register'} subtitle={isStudent ? 'Published work for your enrolled lessons' : 'Real assessments, submissions, and grading status'} />{loading ? <div className="p-8 text-sm text-slate-500">Loading assessments…</div> : visibleAssessments.length === 0 ? <div className="p-8 text-sm text-slate-500">No assessments available yet.</div> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800"><th className="px-5 py-3">Assessment</th><th className="px-5 py-3">Type</th><th className="px-5 py-3">Due</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{visibleAssessments.map((a) => { const mine = submissions.find((s) => s.assessment === a.id); return <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50"><td className="px-5 py-4"><p className="font-semibold text-slate-800 dark:text-slate-100">{a.title}</p><p className="text-xs text-slate-400">{a.lesson_session_title}</p></td><td className="px-5 py-4 text-slate-600 dark:text-slate-300">{label(a.assessment_type)}</td><td className="px-5 py-4 text-slate-600 dark:text-slate-300">{formatDate(a.due_date)}</td><td className="px-5 py-4"><Badge tone={a.status === 'PUBLISHED' ? 'emerald' : a.status === 'CLOSED' ? 'warm' : 'brand'}>{label(a.status)}{mine ? ` · ${label(mine.status)}` : ''}</Badge></td><td className="px-5 py-4 text-right space-x-2">{isStudent && a.status === 'PUBLISHED' && <Button size="sm" onClick={() => void openSubmit(a)}>{mine ? 'View Submission' : 'Submit Work'}</Button>}{(isTeacher || isAdmin) && a.status === 'DRAFT' && <Button size="sm" onClick={() => void publishAssessment(a)} disabled={saving}>Publish</Button>}{(isTeacher || isAdmin) && submissions.filter((s) => s.assessment === a.id).length > 0 && <Button size="sm" variant="secondary" onClick={() => void openGrade(submissions.find((s) => s.assessment === a.id)!)}>Grade</Button>}</td></tr>; })}</tbody></table></div>}</Card>{(isTeacher || isAdmin) && submissions.length > 0 && <Card className="mt-6 overflow-hidden"><CardHeader title="Recent Submissions" subtitle="Select a submission to score and publish feedback" /><div className="divide-y divide-slate-100 dark:divide-slate-800">{submissions.slice(0, 10).map((s) => <div key={s.id} className="px-5 py-4 flex items-center justify-between gap-4"><div><p className="font-semibold text-slate-800 dark:text-slate-100">{s.student_name}</p><p className="text-xs text-slate-400">{assessments.find((a) => a.id === s.assessment)?.title || 'Assessment'} · {s.admission_number}</p></div><Button size="sm" variant="secondary" onClick={() => void openGrade(s)}>Grade</Button></div>)}</div></Card>}{modal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setModal(null); }}><div className="w-full max-w-xl rounded-xl bg-white dark:bg-slate-900 shadow-2xl max-h-[90vh] overflow-y-auto"><div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between"><div><h2 className="font-bold text-lg text-slate-900 dark:text-white">{modal === 'create' ? 'Create Assessment' : modal === 'submit' ? 'Submit Work' : 'Grade Submission'}</h2><p className="text-sm text-slate-400 mt-1">{modal === 'create' ? 'Attach the assessment to an actual lesson session.' : selectedAssessment?.title}</p></div><button className="text-slate-400" onClick={() => setModal(null)}>✕</button></div>{modal === 'create' && <form onSubmit={handleCreate} className="p-5 space-y-4"><input required className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" placeholder="Assessment title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /><textarea className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" rows={3} placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /><div className="grid grid-cols-2 gap-3"><select className="rounded-lg border border-slate-200 p-3 bg-transparent" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{types.map((t) => <option key={t} value={t}>{label(t)}</option>)}</select><input type="number" min="1" required className="rounded-lg border border-slate-200 p-3 bg-transparent" placeholder="Maximum score" value={form.maximumScore} onChange={(e) => setForm({ ...form, maximumScore: e.target.value })} /></div><select required className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" value={form.lesson} onChange={(e) => setForm({ ...form, lesson: e.target.value })}><option value="">Select lesson</option>{lessons.map((l) => <option key={l.id} value={l.id}>{l.lesson_date} · {l.classroom_name} · {l.subject_name}</option>)}</select>{isAdmin && <select required className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" value={form.teacher} onChange={(e) => setForm({ ...form, teacher: e.target.value })}><option value="">Select teacher</option>{teachers.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}</select>}<input type="date" className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} /><Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create Draft'}</Button></form>}{modal === 'submit' && <form onSubmit={handleSubmit} className="p-5 space-y-4"><div className="rounded-lg bg-slate-50 dark:bg-slate-800 p-4 text-sm text-slate-600 dark:text-slate-300">{selectedAssessment?.description || 'Submit your work below.'}</div><textarea required className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" rows={8} placeholder="Write your submission…" value={submissionText} onChange={(e) => setSubmissionText(e.target.value)} /><Button type="submit" disabled={saving}>{saving ? 'Submitting…' : 'Submit Work'}</Button></form>}{modal === 'grade' && <form onSubmit={handleGrade} className="p-5 space-y-4"><div className="rounded-lg bg-slate-50 dark:bg-slate-800 p-4"><p className="font-semibold">{selectedSubmission?.student_name}</p><p className="text-sm text-slate-500 mt-2 whitespace-pre-wrap">{selectedSubmission?.submission_text || 'No text submission.'}</p></div><label className="block text-sm font-semibold">Score<input required type="number" min="0" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 p-3 bg-transparent" value={score} onChange={(e) => setScore(e.target.value)} /></label><textarea className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" rows={3} placeholder="Criterion feedback" value={feedback} onChange={(e) => setFeedback(e.target.value)} /><textarea className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" rows={4} placeholder="Narrative feedback" value={narrative} onChange={(e) => setNarrative(e.target.value)} /><Button type="submit" disabled={saving}>{saving ? 'Publishing…' : 'Save & Publish Grade'}</Button></form>}</div></div>}</div>;
+
+  const visibleAssessments = useMemo(() => {
+    if (!isStudent) return assessments;
+    return assessments.filter((a) => a.status === 'PUBLISHED');
+  }, [assessments, isStudent]);
+
+  const stats = useMemo(() => ({
+    total: assessments.length,
+    published: assessments.filter((a) => a.status === 'PUBLISHED').length,
+    submissions: submissions.length,
+    graded: submissions.filter((s) => s.status === 'GRADED').length,
+  }), [assessments, submissions]);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.lesson || !form.title.trim()) return;
+    setSaving(true); setError('');
+    try {
+      const payload: Record<string, unknown> = {
+        lesson_session: form.lesson,
+        title: form.title.trim(),
+        description: form.description.trim(),
+        assessment_type: form.type,
+        due_date: form.dueDate || null,
+        maximum_score: form.maximumScore ? Number(form.maximumScore) : null,
+        allow_resubmission: false,
+      };
+      if (isAdmin) payload.teacher = form.teacher;
+      const created = await createAssessment(payload);
+      const rubric = await createRubric({ assessment: created.id, title: `${created.title} Rubric`, description: 'Assessment scoring rubric' });
+      await createRubricCriterion({ rubric: rubric.id, title: 'Overall performance', description: 'Demonstrates the expected learning outcome.', maximum_score: Number(form.maximumScore || 100), sequence: 1 });
+      const refreshed = await listAssessments();
+      setAssessments(refreshed);
+      setSelectedAssessment(refreshed.find((a) => a.id === created.id) || created);
+      setModal(null);
+      setMessage('Assessment created as a draft with a scoring rubric.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to create assessment.');
+    } finally { setSaving(false); }
+  }
+
+  async function publishAssessment(assessment: ApiAssessment) {
+    setSaving(true); setError('');
+    try {
+      await updateAssessment(assessment.id, { status: 'PUBLISHED' });
+      setAssessments(await listAssessments());
+      setMessage('Assessment published. Students can now submit work.');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to publish assessment.'); }
+    finally { setSaving(false); }
+  }
+
+  async function openSubmit(assessment: ApiAssessment) {
+    setSelectedAssessment(assessment);
+    const existing = submissions.find((s) => s.assessment === assessment.id);
+    setSubmissionText(existing?.submission_text || '');
+    setModal('submit');
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedAssessment) return;
+    const lesson = lessons.find((l) => l.id === selectedAssessment.lesson_session);
+    const enrollment = enrollments.find((item) => !lesson || item.classroom === lesson.classroom);
+    if (!enrollment) { setError('No active enrollment was found for this assessment class.'); return; }
+    setSaving(true); setError('');
+    try {
+      const existing = submissions.find((s) => s.assessment === selectedAssessment.id);
+      const payload = { assessment: selectedAssessment.id, enrollment: enrollment.id, submission_text: submissionText.trim(), status: 'SUBMITTED' };
+      if (existing) {
+        const { default: unused } = await import('../lib/assessmentsApi').catch(() => ({ default: null }));
+        void unused;
+        // The API client intentionally exposes submission creation for the first submission.
+        // A duplicate is rejected by the backend, so keep the existing submission unchanged here.
+        setError('A submission already exists. Edit/resubmission can be enabled by the teacher when required.');
+      } else {
+        await requestSubmission(payload);
+        setSubmissions(await listSubmissions());
+        setModal(null); setMessage('Submission saved successfully.');
+      }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to submit work.'); }
+    finally { setSaving(false); }
+  }
+
+  async function openGrade(submission: ApiSubmission) {
+    setSelectedSubmission(submission);
+    setSelectedAssessment(assessments.find((a) => a.id === submission.assessment) || null);
+    setScore(''); setFeedback(''); setNarrative(''); setError('');
+    try { setEvaluations(await listEvaluations(submission.id)); } catch { setEvaluations([]); }
+    setModal('grade');
+  }
+
+  async function handleGrade(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedSubmission || !selectedAssessment?.rubric?.criteria?.length) { setError('This assessment has no rubric criterion to score.'); return; }
+    const criterion = selectedAssessment.rubric.criteria[0];
+    setSaving(true); setError('');
+    try {
+      let evaluation = evaluations[0];
+      if (!evaluation) evaluation = await createEvaluation({ submission: selectedSubmission.id, narrative_feedback: narrative });
+      const existingScore = evaluation.criterion_scores.find((item) => item.criterion === criterion.id);
+      if (existingScore) await updateCriterionScore(existingScore.id, { score: Number(score), feedback });
+      else await createCriterionScore({ evaluation: evaluation.id, criterion: criterion.id, score: Number(score), feedback });
+      await updateEvaluation(evaluation.id, { narrative_feedback: narrative });
+      await publishEvaluation(evaluation.id);
+      setSubmissions(await listSubmissions());
+      setModal(null); setMessage('Grade saved and published to the student.');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to save grade.'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div>
+      <PageHeader title="Assessments" description="Create, submit, score, and publish evidence of learning from real lesson activity." />
+
+      {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {message && <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>}
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCard label="Assessments" value={stats.total} icon="ClipboardCheck" tone="brand" />
+        <StatCard label="Published" value={stats.published} icon="Send" tone="emerald" />
+        <StatCard label="Submissions" value={stats.submissions} icon="FileText" tone="warm" />
+        <StatCard label="Graded" value={stats.graded} icon="Award" tone="emerald" />
+      </div>
+
+      {(isTeacher || isAdmin) && (
+        <div className="mb-6 flex justify-end">
+          <Button onClick={() => { setForm({ title: '', description: '', type: 'ASSIGNMENT', lesson: lessons[0]?.id || '', dueDate: '', maximumScore: '100', teacher: teachers[0]?.id || '' }); setModal('create'); }}>Create Assessment</Button>
+        </div>
+      )}
+
+      <Card className="overflow-hidden">
+        <CardHeader title={isStudent ? 'Available Assessments' : 'Assessment Register'} subtitle={isStudent ? 'Published work for your enrolled lessons' : 'Real assessments, submissions, and grading status'} />
+        {loading ? <div className="p-8 text-sm text-slate-500">Loading assessments…</div> : visibleAssessments.length === 0 ? <div className="p-8 text-sm text-slate-500">No assessments available yet.</div> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800"><th className="px-5 py-3">Assessment</th><th className="px-5 py-3">Type</th><th className="px-5 py-3">Due</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Action</th></tr></thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {visibleAssessments.map((a) => {
+                  const mine = submissions.find((s) => s.assessment === a.id);
+                  return <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <td className="px-5 py-4"><p className="font-semibold text-slate-800 dark:text-slate-100">{a.title}</p><p className="text-xs text-slate-400">{a.lesson_session_title}</p></td>
+                    <td className="px-5 py-4 text-slate-600 dark:text-slate-300">{label(a.assessment_type)}</td>
+                    <td className="px-5 py-4 text-slate-600 dark:text-slate-300">{formatDate(a.due_date)}</td>
+                    <td className="px-5 py-4"><Badge tone={a.status === 'PUBLISHED' ? 'emerald' : a.status === 'CLOSED' ? 'warm' : 'brand'}>{label(a.status)}{mine ? ` · ${label(mine.status)}` : ''}</Badge></td>
+                    <td className="px-5 py-4 text-right space-x-2">
+                      {isStudent && a.status === 'PUBLISHED' && <Button size="sm" onClick={() => void openSubmit(a)}>{mine ? 'View Submission' : 'Submit Work'}</Button>}
+                      {(isTeacher || isAdmin) && a.status === 'DRAFT' && <Button size="sm" onClick={() => void publishAssessment(a)} disabled={saving}>Publish</Button>}
+                      {(isTeacher || isAdmin) && submissions.filter((s) => s.assessment === a.id).length > 0 && <Button size="sm" variant="secondary" onClick={() => void openGrade(submissions.find((s) => s.assessment === a.id)!)}>Grade</Button>}
+                    </td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {(isTeacher || isAdmin) && submissions.length > 0 && (
+        <Card className="mt-6 overflow-hidden"><CardHeader title="Recent Submissions" subtitle="Select a submission to score and publish feedback" /><div className="divide-y divide-slate-100 dark:divide-slate-800">{submissions.slice(0, 10).map((s) => <div key={s.id} className="px-5 py-4 flex items-center justify-between gap-4"><div><p className="font-semibold text-slate-800 dark:text-slate-100">{s.student_name}</p><p className="text-xs text-slate-400">{assessments.find((a) => a.id === s.assessment)?.title || 'Assessment'} · {s.admission_number}</p></div><Button size="sm" variant="secondary" onClick={() => void openGrade(s)}>Grade</Button></div>)}</div></Card>
+      )}
+
+      {modal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setModal(null); }}>
+        <div className="w-full max-w-xl rounded-xl bg-white dark:bg-slate-900 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between"><div><h2 className="font-bold text-lg text-slate-900 dark:text-white">{modal === 'create' ? 'Create Assessment' : modal === 'submit' ? 'Submit Work' : 'Grade Submission'}</h2><p className="text-sm text-slate-400 mt-1">{modal === 'create' ? 'Attach the assessment to an actual lesson session.' : selectedAssessment?.title}</p></div><button className="text-slate-400" onClick={() => setModal(null)}>✕</button></div>
+          {modal === 'create' && <form onSubmit={handleCreate} className="p-5 space-y-4"><input required className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" placeholder="Assessment title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /><textarea className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" rows={3} placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /><div className="grid grid-cols-2 gap-3"><select className="rounded-lg border border-slate-200 p-3 bg-transparent" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{types.map((t) => <option key={t} value={t}>{label(t)}</option>)}</select><input type="number" min="1" required className="rounded-lg border border-slate-200 p-3 bg-transparent" placeholder="Maximum score" value={form.maximumScore} onChange={(e) => setForm({ ...form, maximumScore: e.target.value })} /></div><select required className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" value={form.lesson} onChange={(e) => setForm({ ...form, lesson: e.target.value })}><option value="">Select lesson</option>{lessons.map((l) => <option key={l.id} value={l.id}>{l.lesson_date} · {l.classroom_name} · {l.subject_name}</option>)}</select>{isAdmin && <select required className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" value={form.teacher} onChange={(e) => setForm({ ...form, teacher: e.target.value })}><option value="">Select teacher</option>{teachers.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}</select>}<input type="date" className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} /><Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create Draft'}</Button></form>}
+          {modal === 'submit' && <form onSubmit={handleSubmit} className="p-5 space-y-4"><div className="rounded-lg bg-slate-50 dark:bg-slate-800 p-4 text-sm text-slate-600 dark:text-slate-300">{selectedAssessment?.description || 'Submit your work below.'}</div><textarea required className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" rows={8} placeholder="Write your submission…" value={submissionText} onChange={(e) => setSubmissionText(e.target.value)} /><Button type="submit" disabled={saving}>{saving ? 'Submitting…' : 'Submit Work'}</Button></form>}
+          {modal === 'grade' && <form onSubmit={handleGrade} className="p-5 space-y-4"><div className="rounded-lg bg-slate-50 dark:bg-slate-800 p-4"><p className="font-semibold">{selectedSubmission?.student_name}</p><p className="text-sm text-slate-500 mt-2 whitespace-pre-wrap">{selectedSubmission?.submission_text || 'No text submission.'}</p></div><label className="block text-sm font-semibold">Score<input required type="number" min="0" step="0.01" className="mt-1 w-full rounded-lg border border-slate-200 p-3 bg-transparent" value={score} onChange={(e) => setScore(e.target.value)} /></label><textarea className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" rows={3} placeholder="Criterion feedback" value={feedback} onChange={(e) => setFeedback(e.target.value)} /><textarea className="w-full rounded-lg border border-slate-200 p-3 bg-transparent" rows={4} placeholder="Narrative feedback" value={narrative} onChange={(e) => setNarrative(e.target.value)} /><Button type="submit" disabled={saving}>{saving ? 'Publishing…' : 'Save & Publish Grade'}</Button></form>}
+        </div>
+      </div>}
+    </div>
+  );
 }
