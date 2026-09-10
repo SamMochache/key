@@ -1,6 +1,7 @@
 from datetime import timedelta
 
-from django.db.models import Avg
+from django.db.models import Avg, Count, DecimalField, OuterRef, Q, Subquery
+from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
@@ -42,6 +43,24 @@ class AnalyticsView(views.APIView):
             evaluations = evaluations.filter(submission__enrollment__student__user=request.user)
             competencies = competencies.filter(evaluation__submission__enrollment__student__user=request.user)
             classrooms = classrooms.filter(enrollments__student__user=request.user).distinct()
+        elif role == UserRole.TEACHER:
+            teacher = getattr(request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            assigned_enrollments = Enrollment.objects.filter(
+                classroom__teacher_assignments__teacher_id=teacher.id,
+                classroom__teacher_assignments__is_active=True,
+            ).distinct()
+            students = students.filter(enrollments__in=assigned_enrollments).distinct()
+            enrollments = enrollments.filter(id__in=assigned_enrollments.values("id"))
+            attendance = attendance.filter(enrollment_id__in=assigned_enrollments.values("id"))
+            submissions = submissions.filter(enrollment_id__in=assigned_enrollments.values("id"))
+            evaluations = evaluations.filter(submission__enrollment_id__in=assigned_enrollments.values("id"))
+            competencies = competencies.filter(evaluation__submission__enrollment_id__in=assigned_enrollments.values("id"))
+            classrooms = classrooms.filter(
+                teacher_assignments__teacher_id=teacher.id,
+                teacher_assignments__is_active=True,
+            ).distinct()
         elif school is not None:
             students = students.filter(school=school)
             enrollments = enrollments.filter(student__school=school)
@@ -63,9 +82,6 @@ class AnalyticsView(views.APIView):
         graded = submissions.filter(status="GRADED").count()
         completion_rate = (graded / submission_total * 100) if submission_total else None
 
-        # CompetencyEvaluation.level is a TextChoices field, not a numeric column.
-        # Keep the numeric scale in analytics rather than asking PostgreSQL to AVG()
-        # a VARCHAR column. Proficient and Advanced are considered secure outcomes.
         competency_scale = {
             "BEGINNING": 1,
             "DEVELOPING": 2,
@@ -82,21 +98,29 @@ class AnalyticsView(views.APIView):
             if competency_values else None
         )
 
-        monthly_attendance = []
         today = timezone.localdate()
+        monthly_rows = attendance.values(
+            month=TruncMonth("attendance_register__lesson_session__lesson_date")
+        ).annotate(
+            total=Count("id"),
+            present=Count("id", filter=Q(status__in=["PRESENT", "LATE"])),
+        ).order_by("month")
+        monthly_map = {
+            row["month"].strftime("%Y-%m"): row
+            for row in monthly_rows
+            if row["month"] is not None
+        }
+
+        monthly_attendance = []
         for offset in range(5, -1, -1):
             month_start = (today.replace(day=1) - timedelta(days=offset * 28)).replace(day=1)
-            next_month = month_start.replace(
-                year=month_start.year + (month_start.month == 12),
-                month=1 if month_start.month == 12 else month_start.month + 1,
-            )
-            records = attendance.filter(
-                attendance_register__lesson_session__lesson_date__gte=month_start,
-                attendance_register__lesson_session__lesson_date__lt=next_month,
-            )
-            total = records.count()
-            present = records.filter(status__in=["PRESENT", "LATE"]).count()
-            monthly_attendance.append({"month": month_start.strftime("%b"), "rate": round(present / total * 100, 1) if total else 0})
+            row = monthly_map.get(month_start.strftime("%Y-%m"))
+            total = row["total"] if row else 0
+            present = row["present"] if row else 0
+            monthly_attendance.append({
+                "month": month_start.strftime("%b"),
+                "rate": round(present / total * 100, 1) if total else 0,
+            })
 
         growth_trend = []
         term_groups = evaluations.values(
@@ -110,21 +134,32 @@ class AnalyticsView(views.APIView):
                 value = round(float(row["value"] or 0), 1)
                 growth_trend.append({"term": f"Term {term_number}", "practical": value, "language": value, "math": value, "culture": value})
 
+        class_growth = evaluations.filter(
+            submission__enrollment__classroom=OuterRef("pk")
+        ).values("submission__enrollment__classroom").annotate(
+            value=Avg("percentage")
+        ).values("value")[:1]
         classroom_rows = []
-        for classroom in classrooms.order_by("name")[:12]:
-            class_attendance = attendance.filter(enrollment__classroom=classroom)
-            class_total = class_attendance.count()
-            class_present = class_attendance.filter(status__in=["PRESENT", "LATE"]).count()
-            class_scores = [float(value) for value in evaluations.filter(submission__enrollment__classroom=classroom).values_list("percentage", flat=True) if value is not None]
+        for classroom in classrooms.order_by("name").annotate(
+            attendance_total=Count("enrollments__attendance_records", distinct=True),
+            attendance_present=Count(
+                "enrollments__attendance_records",
+                filter=Q(enrollments__attendance_records__status__in=["PRESENT", "LATE"]),
+                distinct=True,
+            ),
+            growth=Subquery(
+                class_growth,
+                output_field=DecimalField(max_digits=5, decimal_places=2),
+            ),
+        )[:12]:
+            total = classroom.attendance_total
+            present = classroom.attendance_present
             classroom_rows.append({
                 "name": classroom.name,
-                "growth": round(sum(class_scores) / len(class_scores), 1) if class_scores else 0,
-                "attendance": round(class_present / class_total * 100, 1) if class_total else 0,
+                "growth": round(float(classroom.growth or 0), 1),
+                "attendance": round(present / total * 100, 1) if total else 0,
             })
 
-        # Competency levels are categorical strings (BEGINNING/DEVELOPING/
-        # PROFICIENT/ADVANCED), so calculate the radar values in Python instead
-        # of using PostgreSQL AVG() on the VARCHAR `level` column.
         competency_rows = []
         competency_groups = competencies.values(
             "competency__name",

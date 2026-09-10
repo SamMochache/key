@@ -19,6 +19,7 @@ import {
   requestSubmission,
   updateAssessment,
   updateCriterionScore,
+  updateEvaluation,
   type ApiAssessment,
   type ApiEvaluation,
   type ApiSubmission,
@@ -70,7 +71,7 @@ export function Assessments() {
         listAssessments(),
         listSubmissions(),
         listLessons(),
-        listEnrollments({ status: 'ACTIVE' }),
+        listEnrollments({ status: 'ENROLLED' }),
       ]);
       setUser(me);
       setAssessments(a);

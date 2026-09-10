@@ -1,14 +1,14 @@
 from io import BytesIO
 
+from django.db.models import Count, Q
 from django.http import FileResponse, JsonResponse
-from rest_framework import permissions, views
-from rest_framework.exceptions import PermissionDenied
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, Spacer
+from rest_framework import permissions, views
+from rest_framework.exceptions import PermissionDenied
 
 from apps.academics.models import Classroom
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school
-from apps.attendance.models import AttendanceRecord
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_classroom
 from apps.enrollment.models import Enrollment
 from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles, summary_table
 
@@ -38,7 +38,17 @@ class AttendanceReportView(views.APIView):
         )
         if school is not None:
             enrollments = enrollments.filter(student__school=school)
+        if role == UserRole.TEACHER:
+            teacher = getattr(request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            enrollments = enrollments.filter(
+                classroom__teacher_assignments__teacher_id=teacher.id,
+                classroom__teacher_assignments__is_active=True,
+            ).distinct()
         if classroom_id:
+            if role == UserRole.TEACHER and not teacher_can_access_classroom(request.user, classroom_id):
+                raise PermissionDenied("You are not assigned to this classroom.")
             enrollments = enrollments.filter(classroom_id=classroom_id)
         if student_id:
             enrollments = enrollments.filter(student_id=student_id)
@@ -47,11 +57,17 @@ class AttendanceReportView(views.APIView):
         if term_id:
             enrollments = enrollments.filter(term_id=term_id)
 
-        enrollments = enrollments.order_by("student__admission_number")
-        if not enrollments.exists():
+        enrollments = enrollments.annotate(
+            present_count=Count("attendance_records", filter=Q(attendance_records__status="PRESENT")),
+            late_count=Count("attendance_records", filter=Q(attendance_records__status="LATE")),
+            absent_count=Count("attendance_records", filter=Q(attendance_records__status="ABSENT")),
+            excused_count=Count("attendance_records", filter=Q(attendance_records__status="EXCUSED")),
+        ).order_by("student__admission_number")
+        enrollments = list(enrollments)
+        if not enrollments:
             return JsonResponse({"detail": "No enrollment found for the selected period."}, status=404)
 
-        selected_classroom = enrollments.first().classroom
+        selected_classroom = enrollments[0].classroom
         if classroom_id:
             classroom = Classroom.objects.filter(id=classroom_id, is_active=True).select_related(
                 "academic_year", "term", "cambridge_stage", "school"
@@ -72,10 +88,11 @@ class AttendanceReportView(views.APIView):
         total_credited = 0
 
         for enrollment in enrollments:
-            records = AttendanceRecord.objects.filter(enrollment=enrollment)
             counts = {
-                status: records.filter(status=status).count()
-                for status in ("PRESENT", "LATE", "ABSENT", "EXCUSED")
+                "PRESENT": enrollment.present_count,
+                "LATE": enrollment.late_count,
+                "ABSENT": enrollment.absent_count,
+                "EXCUSED": enrollment.excused_count,
             }
             total = sum(counts.values())
             credited = counts["PRESENT"] + counts["LATE"]
@@ -111,11 +128,10 @@ class AttendanceReportView(views.APIView):
                 ["Academic Year", selected_classroom.academic_year.name, "Term", f"Term {selected_classroom.term.term_number}", "Attendance Records", str(total_records)],
             ], [25 * mm, 55 * mm, 22 * mm, 45 * mm, 30 * mm, 55 * mm]),
             Spacer(1, 4 * mm),
-            summary_table([
-                "Overall Rate", f"{overall_rate:.1f}%" if overall_rate is not None else "—",
-                "Present", str(totals["PRESENT"]), "Late", str(totals["LATE"]),
-                "Absent", str(totals["ABSENT"]), "Excused", str(totals["EXCUSED"]),
-            ], [28 * mm, 30 * mm, 25 * mm, 25 * mm, 22 * mm, 25 * mm, 30 * mm]),
+            summary_table(
+                ["Overall Rate", f"{overall_rate:.1f}%" if overall_rate is not None else "—", "Present", str(totals["PRESENT"]), "Late", str(totals["LATE"]), "Absent", str(totals["ABSENT"]), "Excused", str(totals["EXCUSED"])],
+                [28 * mm, 30 * mm, 25 * mm, 25 * mm, 22 * mm, 25 * mm, 30 * mm, 25 * mm, 30 * mm, 25 * mm],
+            ),
             Paragraph("Student Attendance", styles["heading"]),
             data_table(
                 [["Admission", "Student", "Present", "Late", "Absent", "Excused", "Attendance Rate"]] + rows,

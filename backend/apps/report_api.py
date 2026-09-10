@@ -9,7 +9,7 @@ from reportlab.platypus import Spacer, Paragraph
 
 from apps.academics.models import AcademicYear, Term
 from apps.assessments.models import AssessmentEvaluation, AssessmentSubmission, CompetencyEvaluation
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_enrollment
 from apps.attendance.models import AttendanceRecord
 from apps.enrollment.models import Enrollment
 from apps.parents.models import ParentStudentRelationship
@@ -67,6 +67,9 @@ class StudentReportView(views.APIView):
         enrollment = enrollments.order_by("-term__start_date").first()
         if enrollment is None:
             return JsonResponse({"detail": "No enrollment found for the selected period."}, status=404)
+
+        if role == UserRole.TEACHER and not teacher_can_access_enrollment(request.user, enrollment):
+            raise PermissionDenied("You are not assigned to this learner's classroom.")
 
         enrollment_ids = Enrollment.objects.filter(student=student, academic_year=enrollment.academic_year, term=enrollment.term).values_list("id", flat=True)
         submissions = AssessmentSubmission.objects.filter(enrollment_id__in=enrollment_ids, assessment__lesson_session__timetable_entry__timetable__term=enrollment.term, evaluation__published=True).select_related("assessment", "evaluation", "assessment__lesson_session__timetable_entry__teacher_subject__subject").order_by("assessment__lesson_session__lesson_date")

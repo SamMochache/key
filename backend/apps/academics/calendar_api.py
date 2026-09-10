@@ -3,7 +3,7 @@ from rest_framework import permissions, serializers, viewsets
 from rest_framework.exceptions import PermissionDenied
 
 from .models import CalendarEvent
-from .views import is_admin, user_school
+from .views import is_admin, is_platform_admin, user_school
 
 
 class CalendarEventSerializer(serializers.ModelSerializer):
@@ -50,7 +50,7 @@ class CalendarEventViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = CalendarEvent.objects.select_related("school", "academic_year", "term").all()
-        if not is_admin(self.request.user):
+        if not is_platform_admin(self.request.user):
             school = user_school(self.request.user)
             queryset = queryset.filter(school=school, is_active=True) if school else queryset.none()
         else:
@@ -75,7 +75,7 @@ class CalendarEventViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        school = serializer.validated_data.get("school") if is_admin(self.request.user) else user_school(self.request.user)
+        school = serializer.validated_data.get("school") if is_platform_admin(self.request.user) else user_school(self.request.user)
         if school is None:
             raise serializers.ValidationError({"school": "A valid institution is required."})
         serializer.save(school=school)

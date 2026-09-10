@@ -51,6 +51,9 @@ class AttendanceRecord(BaseModel):
                 name="unique_attendance_record",
             )
         ]
+        indexes = [
+            models.Index(fields=["enrollment", "status"], name="attendance_enroll_status_idx"),
+        ]
 
     def __str__(self):
         return (

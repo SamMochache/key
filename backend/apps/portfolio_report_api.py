@@ -9,10 +9,11 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.academics.models import Classroom
 from apps.assessments.models import AssessmentEvaluation
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_classroom
 from apps.enrollment.models import Enrollment
 from apps.portfolio.models import PortfolioItem
 from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles, summary_table
+from core.constants.enrollment import EnrollmentStatus
 
 
 class PortfolioEvidenceReportView(views.APIView):
@@ -41,6 +42,8 @@ class PortfolioEvidenceReportView(views.APIView):
                 return JsonResponse({"detail": "Classroom not found."}, status=404)
             if school is not None and classroom.school_id != school.id:
                 raise PermissionDenied("The classroom does not belong to your institution.")
+            if role == UserRole.TEACHER and not teacher_can_access_classroom(request.user, classroom.id):
+                raise PermissionDenied("You are not assigned to this classroom.")
             if year_id and str(classroom.academic_year_id) != year_id:
                 return JsonResponse({"detail": "The classroom does not belong to the selected academic year."}, status=400)
             if term_id and str(classroom.term_id) != term_id:
@@ -48,18 +51,23 @@ class PortfolioEvidenceReportView(views.APIView):
 
         enrollments = Enrollment.objects.select_related(
             "student", "classroom", "classroom__school", "academic_year", "term"
-        ).filter(status__in=["ACTIVE", "COMPLETED"])
+        ).filter(status__in=[EnrollmentStatus.ENROLLED, EnrollmentStatus.PROMOTED])
         if school is not None:
             enrollments = enrollments.filter(classroom__school=school)
         if classroom is not None:
             enrollments = enrollments.filter(classroom=classroom)
+        if role == UserRole.TEACHER:
+            enrollments = enrollments.filter(
+                classroom__teacher_assignments__teacher=request.user.teacher_profile,
+                classroom__teacher_assignments__is_active=True,
+            )
         if year_id:
             enrollments = enrollments.filter(academic_year_id=year_id)
         if term_id:
             enrollments = enrollments.filter(term_id=term_id)
         if student_id:
             enrollments = enrollments.filter(student_id=student_id)
-        enrollments = enrollments.order_by("student__admission_number")
+        enrollments = enrollments.order_by("student__admission_number").distinct()
 
         if not enrollments.exists():
             return JsonResponse({"detail": "No matching enrolled students were found."}, status=404)
@@ -75,11 +83,13 @@ class PortfolioEvidenceReportView(views.APIView):
         ).prefetch_related("artifacts")
 
         if term_id:
-            items = items.filter(event_date__gte=enrollments.first().term.start_date, event_date__lte=enrollments.first().term.end_date)
+            selected_term = enrollments.first().term
+            items = items.filter(event_date__gte=selected_term.start_date, event_date__lte=selected_term.end_date)
         elif year_id:
-            items = items.filter(event_date__gte=enrollments.first().academic_year.start_date, event_date__lte=enrollments.first().academic_year.end_date)
+            selected_year = enrollments.first().academic_year
+            items = items.filter(event_date__gte=selected_year.start_date, event_date__lte=selected_year.end_date)
         if classroom is not None:
-            items = items.filter(portfolio__student__enrollments__classroom=classroom)
+            items = items.filter(portfolio__student__enrollments__classroom=classroom).distinct()
 
         items_by_student = defaultdict(list)
         for item in items:
@@ -104,7 +114,7 @@ class PortfolioEvidenceReportView(views.APIView):
             lesson_ids = set()
             artifact_count = 0
             for item in student_items:
-                artifact_count += item.artifacts.count()
+                artifact_count += len(item.artifacts.all())
                 if item.assessment_submission_id and item.assessment_submission_id in evaluation_ids:
                     published_assessment_ids.add(item.assessment_submission_id)
                 if item.lesson_session_id:
@@ -115,7 +125,7 @@ class PortfolioEvidenceReportView(views.APIView):
                     item.title,
                     item.get_item_type_display(),
                     item.event_date.strftime("%d %b %Y"),
-                    str(item.artifacts.count()),
+                    str(len(item.artifacts.all())),
                 ])
             total_assessments.update(published_assessment_ids)
             total_lessons.update(lesson_ids)
@@ -148,6 +158,7 @@ class PortfolioEvidenceReportView(views.APIView):
         subtitle = "Institution-wide scope"
         if classroom:
             subtitle = f"{classroom.name} • {classroom.academic_year.name} • Term {classroom.term.term_number}"
+
         report_header(story, school_name, "Portfolio & Evidence Summary", subtitle)
 
         if classroom:

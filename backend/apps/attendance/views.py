@@ -2,6 +2,8 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.assessments.permissions import teacher_can_access_classroom
+
 from .models.attendance_register import AttendanceRegister
 from .serializers import AttendanceBulkSerializer, AttendanceRegisterSerializer
 
@@ -14,6 +16,11 @@ def is_platform_admin(user):
 def is_admin(user):
     school_admin = getattr(user, "school_admin_profile", None)
     return bool(is_platform_admin(user) or (school_admin is not None and school_admin.is_active))
+
+
+def teacher_has_lesson_access(user, lesson_session):
+    classroom_id = getattr(getattr(lesson_session, "timetable_entry", None), "classroom_id", None)
+    return bool(classroom_id and teacher_can_access_classroom(user, classroom_id))
 
 
 class AttendanceAccessPermission(permissions.BasePermission):
@@ -42,7 +49,13 @@ class AttendanceRegisterViewSet(viewsets.ReadOnlyModelViewSet):
         if getattr(user, "student_profile", None) is not None and not is_admin(user):
             queryset = queryset.filter(records__enrollment__student=user.student_profile).distinct()
         elif not is_admin(user):
-            queryset = queryset.filter(lesson_session__teacher=user)
+            teacher = getattr(user, "teacher_profile", None)
+            if teacher is None:
+                return queryset.none()
+            queryset = queryset.filter(
+                lesson_session__timetable_entry__classroom__teacher_assignments__teacher_id=teacher.id,
+                lesson_session__timetable_entry__classroom__teacher_assignments__is_active=True,
+            ).distinct()
 
         lesson_session = self.request.query_params.get("lesson_session")
         lesson_date = self.request.query_params.get("lesson_date")
@@ -53,6 +66,8 @@ class AttendanceRegisterViewSet(viewsets.ReadOnlyModelViewSet):
         if lesson_date:
             queryset = queryset.filter(lesson_session__lesson_date=lesson_date)
         if classroom:
+            if not is_admin(user) and not teacher_can_access_classroom(user, classroom):
+                return queryset.none()
             queryset = queryset.filter(lesson_session__timetable_entry__classroom_id=classroom)
         if student and is_admin(user):
             queryset = queryset.filter(records__enrollment__student_id=student).distinct()
@@ -66,16 +81,16 @@ class AttendanceRegisterViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = AttendanceBulkSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         lesson = serializer.validated_data["lesson"]
-        if not is_admin(request.user) and lesson.teacher_id != request.user.id:
-            return Response({"detail": "You can only record attendance for your own lessons."}, status=status.HTTP_403_FORBIDDEN)
+        if not is_admin(request.user) and not teacher_has_lesson_access(request.user, lesson):
+            return Response({"detail": "You can only record attendance for an assigned classroom."}, status=status.HTTP_403_FORBIDDEN)
         register = serializer.save()
         return Response(AttendanceRegisterSerializer(register).data)
 
     @action(detail=True, methods=["post"], url_path="lock")
     def lock(self, request, pk=None):
         register = self.get_object()
-        if not is_admin(request.user) and register.lesson_session.teacher_id != request.user.id:
-            return Response({"detail": "You can only lock your own attendance registers."}, status=status.HTTP_403_FORBIDDEN)
+        if not is_admin(request.user) and not teacher_has_lesson_access(request.user, register.lesson_session):
+            return Response({"detail": "You can only lock attendance registers for an assigned classroom."}, status=status.HTTP_403_FORBIDDEN)
         if register.status != "SUBMITTED":
             return Response({"detail": "Only submitted registers can be locked."}, status=status.HTTP_400_BAD_REQUEST)
         from django.utils import timezone

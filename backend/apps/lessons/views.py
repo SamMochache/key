@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
+from apps.assessments.permissions import teacher_can_access_classroom
 from apps.timetables.models.timetable_entry import TimetableEntry
 from core.constants.timetable import TimetableStatus, WeekDay
 
@@ -64,7 +65,8 @@ class LessonAccessPermission(permissions.BasePermission):
             return True
         teacher = getattr(request.user, "teacher_profile", None)
         if teacher is not None:
-            return obj.teacher_id == request.user.id
+            classroom_id = obj.timetable_entry.classroom_id
+            return obj.teacher_id == request.user.id and teacher_can_access_classroom(request.user, classroom_id)
         return obj.timetable_entry.classroom.school_id == school_id_for(request.user)
 
 
@@ -88,7 +90,11 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
             student = getattr(self.request.user, "student_profile", None)
             school_admin = getattr(self.request.user, "school_admin_profile", None)
             if teacher is not None and not (school_admin is not None and school_admin.is_active):
-                qs = qs.filter(teacher_id=self.request.user.id)
+                qs = qs.filter(
+                    teacher_id=self.request.user.id,
+                    timetable_entry__classroom__teacher_assignments__teacher_id=teacher.id,
+                    timetable_entry__classroom__teacher_assignments__is_active=True,
+                )
             elif student is not None and not (school_admin is not None and school_admin.is_active):
                 qs = qs.filter(timetable_entry__classroom__enrollments__student_id=student.id)
 
@@ -121,6 +127,10 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
         teacher = serializer.validated_data["teacher"]
         if not is_admin(self.request.user) and teacher.id != self.request.user.id:
             raise PermissionDenied("Teachers can only create lessons assigned to themselves.")
+        if not is_admin(self.request.user) and not teacher_can_access_classroom(
+            self.request.user, serializer.validated_data["timetable_entry"].classroom_id
+        ):
+            raise PermissionDenied("You can only create lessons in an assigned classroom.")
         serializer.save()
 
     def _require_assigned_teacher(self, lesson):
@@ -128,6 +138,8 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
             return
         if lesson.teacher_id != self.request.user.id:
             raise PermissionDenied("You can only manage lessons assigned to you.")
+        if not teacher_can_access_classroom(self.request.user, lesson.timetable_entry.classroom_id):
+            raise PermissionDenied("You are not assigned to this classroom.")
 
     @action(detail=False, methods=["post"], url_path="sync-day")
     def sync_day(self, request):
@@ -164,9 +176,6 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
                 entries = entries.filter(timetable__school_id=requested_school)
         elif school_id:
             entries = entries.filter(timetable__school_id=school_id)
-            # A teacher may sync only their own timetable. A school administrator
-            # may sync the school's published timetable so the admin Lessons and
-            # Attendance screens can bootstrap missing daily sessions.
             if not is_admin(request.user):
                 teacher = getattr(request.user, "teacher_profile", None)
                 if teacher is None:

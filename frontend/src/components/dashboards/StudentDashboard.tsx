@@ -29,7 +29,7 @@ export function StudentDashboard({ name }: { name: string }) {
       setLoading(true); setError('');
       try {
         const [enrollmentData, assessmentData, submissionData] = await Promise.all([
-          listEnrollments({ status: 'ACTIVE' }), listAssessments({ status: 'PUBLISHED' }), listSubmissions()
+          listEnrollments({ status: 'ENROLLED' }), listAssessments({ status: 'PUBLISHED' }), listSubmissions()
         ]);
         if (!mounted) return;
         setEnrollments(enrollmentData); setAssessments(assessmentData); setSubmissions(submissionData);

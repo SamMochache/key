@@ -1,6 +1,6 @@
 from rest_framework import permissions, viewsets
 
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_enrollment
 from apps.enrollment.models import Enrollment
 from core.constants.enrollment import EnrollmentStatus
 
@@ -43,12 +43,10 @@ class StudentAccessPermission(permissions.BasePermission):
         if role == UserRole.TEACHER:
             if obj.school_id != user.teacher_profile.school_id:
                 return False
-            if request.method not in permissions.SAFE_METHODS:
-                return obj.enrollments.filter(
-                    classroom__teacher_subjects__teacher=user.teacher_profile,
-                    classroom__teacher_subjects__is_active=True,
-                ).exists()
-            return True
+            return obj.enrollments.filter(
+                classroom__teacher_assignments__teacher=user.teacher_profile,
+                classroom__teacher_assignments__is_active=True,
+            ).exists()
 
         return False
 
@@ -71,8 +69,8 @@ class StudentViewSet(viewsets.ModelViewSet):
         elif role == UserRole.TEACHER:
             queryset = queryset.filter(
                 school_id=user.teacher_profile.school_id,
-                enrollments__classroom__teacher_subjects__teacher=user.teacher_profile,
-                enrollments__classroom__teacher_subjects__is_active=True,
+                enrollments__classroom__teacher_assignments__teacher=user.teacher_profile,
+                enrollments__classroom__teacher_assignments__is_active=True,
             ).distinct()
         elif role == UserRole.STUDENT:
             queryset = queryset.filter(pk=user.student_profile.pk)

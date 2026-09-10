@@ -1,6 +1,6 @@
 from io import BytesIO
 
-from django.db.models import Avg
+from django.db.models import Avg, Count, Q
 from django.http import FileResponse, JsonResponse
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, Spacer
@@ -9,11 +9,12 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.academics.models import AcademicYear, Classroom, Term
 from apps.assessments.models import AssessmentSubmission, CompetencyEvaluation
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_classroom
 from apps.attendance.models import AttendanceRecord
 from apps.enrollment.models import Enrollment
 from apps.portfolio.models import PortfolioItem
 from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles, summary_table
+from core.constants.enrollment import EnrollmentStatus
 
 
 class ConsolidatedReportView(views.APIView):
@@ -38,6 +39,8 @@ class ConsolidatedReportView(views.APIView):
         term = Term.objects.select_related("academic_year").filter(id=term_id, academic_year_id=year_id).first()
         if year is None or term is None:
             return JsonResponse({"detail": "The selected academic year or term was not found."}, status=404)
+        if school is not None and year.school_id != school.id:
+            raise PermissionDenied("The academic year does not belong to your institution.")
 
         classroom = None
         if classroom_id:
@@ -46,14 +49,26 @@ class ConsolidatedReportView(views.APIView):
                 return JsonResponse({"detail": "Classroom not found."}, status=404)
             if school is not None and classroom.school_id != school.id:
                 raise PermissionDenied("The classroom does not belong to your institution.")
+            if role == UserRole.TEACHER and not teacher_can_access_classroom(request.user, classroom.id):
+                raise PermissionDenied("You are not assigned to this classroom.")
             if classroom.academic_year_id != year.id or classroom.term_id != term.id:
                 return JsonResponse({"detail": "The classroom does not belong to the selected academic period."}, status=400)
 
         enrollments = Enrollment.objects.select_related("student", "classroom").filter(
-            academic_year_id=year.id, term_id=term.id, status__in=["ACTIVE", "COMPLETED"]
+            academic_year_id=year.id,
+            term_id=term.id,
+            status__in=[EnrollmentStatus.ENROLLED, EnrollmentStatus.PROMOTED],
         )
         if school is not None:
             enrollments = enrollments.filter(classroom__school=school)
+        if role == UserRole.TEACHER:
+            teacher = getattr(request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            enrollments = enrollments.filter(
+                classroom__teacher_assignments__teacher_id=teacher.id,
+                classroom__teacher_assignments__is_active=True,
+            ).distinct()
         if classroom is not None:
             enrollments = enrollments.filter(classroom=classroom)
         if student_id:
@@ -65,21 +80,28 @@ class ConsolidatedReportView(views.APIView):
         enrollment_ids = list(enrollments.values_list("id", flat=True))
         submissions = AssessmentSubmission.objects.filter(
             enrollment_id__in=enrollment_ids, evaluation__published=True, assessment__status="PUBLISHED"
-        ).select_related("evaluation")
-        assessment_scores = {}
-        for row in submissions.values("enrollment_id").annotate(average=Avg("evaluation__percentage")):
-            assessment_scores[row["enrollment_id"]] = row["average"]
-        assessment_counts = {}
-        for enrollment_id in submissions.values_list("enrollment_id", flat=True):
-            assessment_counts[enrollment_id] = assessment_counts.get(enrollment_id, 0) + 1
+        )
+        assessment_scores = {
+            row["enrollment_id"]: row["average"]
+            for row in submissions.values("enrollment_id").annotate(average=Avg("evaluation__percentage"))
+        }
+        assessment_counts = {
+            row["enrollment_id"]: row["count"]
+            for row in submissions.values("enrollment_id").annotate(count=Count("id"))
+        }
 
-        attendance = AttendanceRecord.objects.filter(enrollment_id__in=enrollment_ids)
-        attendance_data = {}
-        for enrollment_id in enrollment_ids:
-            records = attendance.filter(enrollment_id=enrollment_id)
-            total = records.count()
-            attended = records.filter(status__in=["PRESENT", "LATE"]).count()
-            attendance_data[enrollment_id] = round(attended * 100 / total, 1) if total else None
+        attendance_data = {
+            row["enrollment_id"]: {
+                "total": row["total"],
+                "attended": row["attended"],
+            }
+            for row in AttendanceRecord.objects.filter(enrollment_id__in=enrollment_ids)
+            .values("enrollment_id")
+            .annotate(
+                total=Count("id"),
+                attended=Count("id", filter=Q(status__in=["PRESENT", "LATE"])),
+            )
+        }
 
         competency_data = {}
         for item in CompetencyEvaluation.objects.filter(
@@ -87,28 +109,33 @@ class ConsolidatedReportView(views.APIView):
         ).values("evaluation__submission__enrollment_id", "level"):
             competency_data.setdefault(item["evaluation__submission__enrollment_id"], []).append(item["level"])
 
-        portfolio_items = PortfolioItem.objects.filter(
-            portfolio__student_id__in=enrollments.values_list("student_id", flat=True),
-            event_date__gte=term.start_date,
-            event_date__lte=term.end_date,
-        ).prefetch_related("artifacts")
-        portfolio_counts = {}
-        artifact_counts = {}
-        for item in portfolio_items:
-            student_key = item.portfolio.student_id
-            portfolio_counts[student_key] = portfolio_counts.get(student_key, 0) + 1
-            artifact_counts[student_key] = artifact_counts.get(student_key, 0) + item.artifacts.count()
+        portfolio_data = {
+            row["portfolio__student_id"]: {
+                "items": row["item_count"],
+                "artifacts": row["artifact_count"],
+            }
+            for row in PortfolioItem.objects.filter(
+                portfolio__student_id__in=enrollments.values_list("student_id", flat=True),
+                event_date__gte=term.start_date,
+                event_date__lte=term.end_date,
+            ).values("portfolio__student_id").annotate(
+                item_count=Count("id", distinct=True),
+                artifact_count=Count("artifacts", distinct=True),
+            )
+        }
 
         rows = []
         total_scores, attendance_rates, competency_proficient = [], [], []
         total_items = total_artifacts = 0
         for enrollment in enrollments:
             score = assessment_scores.get(enrollment.id)
-            attendance_rate = attendance_data.get(enrollment.id)
+            attendance = attendance_data.get(enrollment.id, {"total": 0, "attended": 0})
+            attendance_rate = round(attendance["attended"] * 100 / attendance["total"], 1) if attendance["total"] else None
             levels = competency_data.get(enrollment.id, [])
             proficient = round(sum(level in {"PROFICIENT", "ADVANCED"} for level in levels) * 100 / len(levels), 1) if levels else None
-            items = portfolio_counts.get(enrollment.student_id, 0)
-            artifacts = artifact_counts.get(enrollment.student_id, 0)
+            portfolio = portfolio_data.get(enrollment.student_id, {"items": 0, "artifacts": 0})
+            items = portfolio["items"]
+            artifacts = portfolio["artifacts"]
             rows.append([
                 enrollment.student.admission_number,
                 str(enrollment.student),

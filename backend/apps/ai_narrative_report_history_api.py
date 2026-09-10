@@ -3,7 +3,7 @@ from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
 
 from apps.assessments.models import AINarrativeReport, AINarrativeReportHistory
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_classroom
 from apps.enrollment.models import Enrollment
 
 
@@ -18,6 +18,7 @@ class AINarrativeReportHistoryView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        role = get_user_role(request.user)
         school = _staff_school(request)
         report_id = request.query_params.get("report")
         if not report_id:
@@ -27,13 +28,18 @@ class AINarrativeReportHistoryView(views.APIView):
         if report is None:
             return JsonResponse({"detail": "Report not found."}, status=404)
 
-        if school is not None and not Enrollment.objects.filter(
+        report_enrollment = Enrollment.objects.filter(
             student_id=report.student_id,
             academic_year_id=report.academic_year_id,
             term_id=report.term_id,
-            classroom__school_id=school.id,
-        ).exists():
+        ).select_related("classroom").first()
+        if report_enrollment is None:
+            return JsonResponse({"detail": "The enrollment for this report was not found."}, status=404)
+
+        if school is not None and report_enrollment.classroom.school_id != school.id:
             raise PermissionDenied("The report does not belong to your institution.")
+        if role == UserRole.TEACHER and not teacher_can_access_classroom(request.user, report_enrollment.classroom_id):
+            raise PermissionDenied("You are not assigned to this classroom.")
 
         history = AINarrativeReportHistory.objects.select_related("actor").filter(report_id=report.id)
         results = []
