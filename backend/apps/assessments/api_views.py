@@ -28,6 +28,8 @@ from .permissions import (
     UserRole,
     get_user_role,
     get_user_school,
+    teacher_can_access_classroom,
+    teacher_can_access_enrollment,
 )
 from .serializers import (
     AssessmentEvaluationSerializer,
@@ -76,7 +78,16 @@ class AssessmentViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
                 status="PUBLISHED",
                 lesson_session__timetable_entry__classroom__enrollments__student=student,
             ).distinct()
-        return self.filter_school(queryset, "teacher__school")
+        queryset = self.filter_school(queryset, "teacher__school")
+        if role == UserRole.TEACHER:
+            teacher = getattr(self.request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            queryset = queryset.filter(
+                lesson_session__timetable_entry__classroom__teacher_assignments__teacher_id=teacher.id,
+                lesson_session__timetable_entry__classroom__teacher_assignments__is_active=True,
+            ).distinct()
+        return queryset
 
     def perform_create(self, serializer):
         if get_user_role(self.request.user) == UserRole.ADMIN:
@@ -86,6 +97,11 @@ class AssessmentViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
             teacher = self.request.user.teacher_profile
         except ObjectDoesNotExist as exc:
             raise PermissionDenied("Only teachers can create assessments.") from exc
+        lesson_session = serializer.validated_data.get("lesson_session")
+        if lesson_session is None or not teacher_can_access_classroom(
+            self.request.user, lesson_session.timetable_entry.classroom_id
+        ):
+            raise PermissionDenied("You are not assigned to the assessment classroom.")
         serializer.save(teacher=teacher)
 
 
@@ -112,6 +128,14 @@ class AssessmentSubmissionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
                 enrollment__student__parent_relationships__can_view_reports=True,
             ).distinct()
         queryset = self.filter_school(queryset, "enrollment__student__school")
+        if role == UserRole.TEACHER:
+            teacher = getattr(self.request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            queryset = queryset.filter(
+                enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
+                enrollment__classroom__teacher_assignments__is_active=True,
+            ).distinct()
         student_id = self.request.query_params.get("student")
         if student_id:
             queryset = queryset.filter(enrollment__student_id=student_id)
@@ -133,6 +157,10 @@ class AssessmentSubmissionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
             enrollment = serializer.validated_data.get("enrollment")
             if enrollment is None or enrollment.student_id != student.id:
                 raise PermissionDenied("You can only submit work for your own enrollment.")
+        elif role == UserRole.TEACHER:
+            enrollment = serializer.validated_data.get("enrollment")
+            if enrollment is None or not teacher_can_access_enrollment(self.request.user, enrollment):
+                raise PermissionDenied("You are not assigned to the submission learner's classroom.")
         serializer.save(submitted_by=self.request.user)
 
     def perform_update(self, serializer):
@@ -142,6 +170,9 @@ class AssessmentSubmissionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
                 raise PermissionDenied("You can only edit your own submission.")
             if submission.status == SubmissionStatus.GRADED:
                 raise PermissionDenied("A graded submission cannot be edited.")
+        elif get_user_role(self.request.user) == UserRole.TEACHER:
+            if not teacher_can_access_enrollment(self.request.user, serializer.instance.enrollment):
+                raise PermissionDenied("You are not assigned to the submission learner's classroom.")
         serializer.save()
 
 
@@ -151,7 +182,16 @@ class RubricViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Rubric.objects.select_related("assessment__teacher__school").prefetch_related("criteria")
-        return self.filter_school(queryset, "assessment__teacher__school")
+        queryset = self.filter_school(queryset, "assessment__teacher__school")
+        if get_user_role(self.request.user) == UserRole.TEACHER:
+            teacher = getattr(self.request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            queryset = queryset.filter(
+                assessment__lesson_session__timetable_entry__classroom__teacher_assignments__teacher_id=teacher.id,
+                assessment__lesson_session__timetable_entry__classroom__teacher_assignments__is_active=True,
+            ).distinct()
+        return queryset
 
 
 class RubricCriterionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
@@ -160,7 +200,16 @@ class RubricCriterionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = RubricCriterion.objects.select_related("rubric__assessment__teacher__school")
-        return self.filter_school(queryset, "rubric__assessment__teacher__school")
+        queryset = self.filter_school(queryset, "rubric__assessment__teacher__school")
+        if get_user_role(self.request.user) == UserRole.TEACHER:
+            teacher = getattr(self.request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            queryset = queryset.filter(
+                rubric__assessment__lesson_session__timetable_entry__classroom__teacher_assignments__teacher_id=teacher.id,
+                rubric__assessment__lesson_session__timetable_entry__classroom__teacher_assignments__is_active=True,
+            ).distinct()
+        return queryset
 
 
 class AssessmentEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
@@ -177,6 +226,14 @@ class AssessmentEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
             queryset = queryset.filter(submission__enrollment__student__user=self.request.user)
         else:
             queryset = self.filter_school(queryset, "submission__enrollment__student__school")
+            if role == UserRole.TEACHER:
+                teacher = getattr(self.request.user, "teacher_profile", None)
+                if teacher is None:
+                    raise PermissionDenied("Teacher profile not found.")
+                queryset = queryset.filter(
+                    submission__enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
+                    submission__enrollment__classroom__teacher_assignments__is_active=True,
+                ).distinct()
 
         submission_id = self.request.query_params.get("submission")
         if submission_id:
@@ -184,10 +241,17 @@ class AssessmentEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
         return queryset
 
     def perform_create(self, serializer):
+        if get_user_role(self.request.user) == UserRole.TEACHER:
+            submission = serializer.validated_data.get("submission")
+            if submission is None or not teacher_can_access_enrollment(self.request.user, submission.enrollment):
+                raise PermissionDenied("You are not assigned to the submission learner's classroom.")
         evaluation = serializer.save()
         self._recalculate(evaluation)
 
     def perform_update(self, serializer):
+        if get_user_role(self.request.user) == UserRole.TEACHER:
+            if not teacher_can_access_enrollment(self.request.user, serializer.instance.submission.enrollment):
+                raise PermissionDenied("You are not assigned to the evaluation learner's classroom.")
         evaluation = serializer.save()
         self._recalculate(evaluation)
 
@@ -230,7 +294,16 @@ class CriterionScoreViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
             "evaluation__submission__assessment__teacher__school",
             "evaluation__submission__enrollment__student__school",
         )
-        return self.filter_school(queryset, "evaluation__submission__enrollment__student__school")
+        queryset = self.filter_school(queryset, "evaluation__submission__enrollment__student__school")
+        if get_user_role(self.request.user) == UserRole.TEACHER:
+            teacher = getattr(self.request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            queryset = queryset.filter(
+                evaluation__submission__enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
+                evaluation__submission__enrollment__classroom__teacher_assignments__is_active=True,
+            ).distinct()
+        return queryset
 
     def _validate_score(self, score, criterion):
         if score is not None and score < 0:
@@ -239,11 +312,18 @@ class CriterionScoreViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
             raise PermissionDenied("Score cannot exceed the criterion maximum.")
 
     def perform_create(self, serializer):
+        if get_user_role(self.request.user) == UserRole.TEACHER:
+            evaluation = serializer.validated_data.get("evaluation")
+            if evaluation is None or not teacher_can_access_enrollment(self.request.user, evaluation.submission.enrollment):
+                raise PermissionDenied("You are not assigned to the evaluation learner's classroom.")
         self._validate_score(serializer.validated_data.get("score"), serializer.validated_data.get("criterion"))
         serializer.save()
         self._recalculate(serializer.instance.evaluation)
 
     def perform_update(self, serializer):
+        if get_user_role(self.request.user) == UserRole.TEACHER:
+            if not teacher_can_access_enrollment(self.request.user, serializer.instance.evaluation.submission.enrollment):
+                raise PermissionDenied("You are not assigned to the evaluation learner's classroom.")
         self._validate_score(
             serializer.validated_data.get("score", serializer.instance.score),
             serializer.validated_data.get("criterion", serializer.instance.criterion),
@@ -272,7 +352,29 @@ class CompetencyEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
             "evaluation__submission__assessment__teacher__school",
             "evaluation__submission__enrollment__student__school",
         )
-        return self.filter_school(queryset, "evaluation__submission__enrollment__student__school")
+        queryset = self.filter_school(queryset, "evaluation__submission__enrollment__student__school")
+        if get_user_role(self.request.user) == UserRole.TEACHER:
+            teacher = getattr(self.request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            queryset = queryset.filter(
+                evaluation__submission__enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
+                evaluation__submission__enrollment__classroom__teacher_assignments__is_active=True,
+            ).distinct()
+        return queryset
+
+    def perform_create(self, serializer):
+        if get_user_role(self.request.user) == UserRole.TEACHER:
+            evaluation = serializer.validated_data.get("evaluation")
+            if evaluation is None or not teacher_can_access_enrollment(self.request.user, evaluation.submission.enrollment):
+                raise PermissionDenied("You are not assigned to the evaluation learner's classroom.")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        if get_user_role(self.request.user) == UserRole.TEACHER:
+            if not teacher_can_access_enrollment(self.request.user, serializer.instance.evaluation.submission.enrollment):
+                raise PermissionDenied("You are not assigned to the evaluation learner's classroom.")
+        serializer.save()
 
 
 class DashboardSummaryView(SchoolScopedQuerysetMixin, viewsets.ViewSet):
@@ -303,6 +405,22 @@ class DashboardSummaryView(SchoolScopedQuerysetMixin, viewsets.ViewSet):
             assessments = assessments.filter(teacher__school=school)
             submissions = submissions.filter(enrollment__student__school=school)
             evaluations = evaluations.filter(submission__enrollment__student__school=school)
+            if role == UserRole.TEACHER:
+                teacher = getattr(request.user, "teacher_profile", None)
+                if teacher is None:
+                    raise PermissionDenied("Teacher profile not found.")
+                assessments = assessments.filter(
+                    lesson_session__timetable_entry__classroom__teacher_assignments__teacher_id=teacher.id,
+                    lesson_session__timetable_entry__classroom__teacher_assignments__is_active=True,
+                ).distinct()
+                submissions = submissions.filter(
+                    enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
+                    enrollment__classroom__teacher_assignments__is_active=True,
+                ).distinct()
+                evaluations = evaluations.filter(
+                    submission__enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
+                    submission__enrollment__classroom__teacher_assignments__is_active=True,
+                ).distinct()
 
         return Response({
             "students": students.count(),
