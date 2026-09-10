@@ -5,7 +5,7 @@ from rest_framework import permissions, status, views
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_enrollment
 from apps.schools.models import School
 from apps.students.models import Student
 
@@ -25,11 +25,22 @@ class ParentManagementView(views.APIView):
             raise PermissionDenied("Only staff can manage parent accounts.")
         return role, get_user_school(request.user)
 
+    def _teacher_parent_scope(self, request):
+        return Parent.objects.filter(
+            student_relationships__student__enrollments__classroom__teacher_assignments__teacher=request.user.teacher_profile,
+            student_relationships__student__enrollments__classroom__teacher_assignments__is_active=True,
+            student_relationships__is_active=True,
+        ).distinct()
+
     def get(self, request):
         role, school = self._staff(request)
-        parents = Parent.objects.select_related("user", "school").prefetch_related("student_relationships__student__user")
-        if role != UserRole.ADMIN and school is not None:
-            parents = parents.filter(school_id=school.id)
+        if role == UserRole.TEACHER:
+            parents = self._teacher_parent_scope(request)
+        else:
+            parents = Parent.objects.all()
+            if school is not None:
+                parents = parents.filter(school_id=school.id)
+        parents = parents.select_related("user", "school").prefetch_related("student_relationships__student__user")
         search = request.query_params.get("search", "").strip()
         if search:
             parents = parents.filter(
@@ -40,6 +51,11 @@ class ParentManagementView(views.APIView):
         results = []
         for parent in parents[:100]:
             links = parent.student_relationships.filter(is_active=True).select_related("student__user")
+            if role == UserRole.TEACHER:
+                links = links.filter(
+                    student__enrollments__classroom__teacher_assignments__teacher=request.user.teacher_profile,
+                    student__enrollments__classroom__teacher_assignments__is_active=True,
+                ).distinct()
             results.append({
                 "id": str(parent.id),
                 "user": str(parent.user_id),
@@ -91,6 +107,12 @@ class ParentManagementView(views.APIView):
         student = Student.objects.filter(id=student_id, school_id=school.id, is_active=True).select_related("user").first()
         if student is None:
             return Response({"detail": "The selected student does not belong to the selected institution."}, status=404)
+        if role == UserRole.TEACHER:
+            if not student.enrollments.filter(
+                classroom__teacher_assignments__teacher=request.user.teacher_profile,
+                classroom__teacher_assignments__is_active=True,
+            ).exists():
+                raise PermissionDenied("You can only manage parents for learners in your assigned classrooms.")
 
         existing_user = User.objects.filter(email=email).first()
         if existing_user is not None:
@@ -142,6 +164,8 @@ class ParentManagementView(views.APIView):
             return Response({"detail": "Parent not found."}, status=404)
         if role != UserRole.ADMIN and (staff_school is None or parent.school_id != staff_school.id):
             raise PermissionDenied("The parent does not belong to your institution.")
+        if role == UserRole.TEACHER and not self._teacher_parent_scope(request).filter(id=parent.id).exists():
+            raise PermissionDenied("You can only manage parents linked to learners in your assigned classrooms.")
 
         for field in ("first_name", "last_name", "phone_number"):
             if field in request.data:
