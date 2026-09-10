@@ -2,21 +2,23 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from apps.assessments.models import AINarrativeReport
-from apps.parents.models import ParentStudentRelationship
+from apps.parents.models import Parent, ParentStudentRelationship
 from apps.students.models import Student
 from apps.identity.models import User
 
 
 class Command(BaseCommand):
-    help = "Reconcile legacy @keydemo.test student identities with the canonical @key-demo.test demo students."
+    help = "Reconcile legacy @keydemo.test demo identities with canonical @key-demo.test identities."
 
-    # PR #19 used student1@keydemo.test, student2@keydemo.test, etc.
-    # The current seed uses zero-padded addresses under @key-demo.test.
-    # Email is used deliberately here: it is the identity key, not a name match.
+    # PR #19 used these legacy addresses. The current demo seed uses zero-padded
+    # student addresses under @key-demo.test. Email is the deliberate migration
+    # key; names are never used to identify or merge people.
     LEGACY_TO_CANONICAL = {
         f"student{i}@keydemo.test": f"student{i:02d}@key-demo.test"
         for i in range(1, 17)
     }
+    LEGACY_PARENT_EMAIL = "parent@keydemo.test"
+    CANONICAL_PARENT_EMAIL = "parent@key-demo.test"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -28,7 +30,9 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         apply_changes = options["apply"]
         changed_relationships = 0
+        migrated_reports = 0
         deactivated_students = 0
+        deactivated_parents = 0
         skipped = 0
 
         for legacy_email, canonical_email in self.LEGACY_TO_CANONICAL.items():
@@ -60,9 +64,14 @@ class Command(BaseCommand):
             relationships = list(
                 ParentStudentRelationship.objects.filter(student=legacy_student)
             )
-            if relationships:
+            old_reports = list(
+                AINarrativeReport.objects.filter(student=legacy_student)
+            )
+            if relationships or old_reports:
                 self.stdout.write(
-                    f"{legacy_email} -> {canonical_email}: {len(relationships)} parent relationship(s)"
+                    f"{legacy_email} -> {canonical_email}: "
+                    f"{len(relationships)} parent relationship(s), "
+                    f"{len(old_reports)} AI report(s)"
                 )
 
             if not apply_changes:
@@ -75,54 +84,120 @@ class Command(BaseCommand):
                         student=canonical_student,
                     ).exclude(pk=relationship.pk).first()
                     if duplicate:
-                        # The canonical relationship already exists. Preserve the
-                        # canonical row and remove only the obsolete duplicate edge.
+                        # Keep the canonical authorization edge and remove only
+                        # the obsolete duplicate edge.
                         relationship.delete()
                     else:
                         relationship.student = canonical_student
-                        relationship.save(update_fields=["student", "updated_at"])
+                        relationship.save(update_fields=["student"])
                     changed_relationships += 1
 
-                # Reports are already canonical in the current workflow. Do not
-                # move them by name or overwrite a canonical report. If an old
-                # report exists, report it so it can be handled explicitly.
-                old_report_count = AINarrativeReport.objects.filter(
-                    student=legacy_student
-                ).count()
-                canonical_report_count = AINarrativeReport.objects.filter(
-                    student=canonical_student
-                ).count()
-                if old_report_count and canonical_report_count:
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"  Reports: legacy={old_report_count}, canonical={canonical_report_count}; left untouched."
+                # Move legacy AI reports only when the canonical student does not
+                # already have that exact academic-year/term report. If a
+                # canonical report exists, it wins and the historical legacy
+                # report remains untouched rather than being overwritten.
+                for report in old_reports:
+                    conflict = AINarrativeReport.objects.filter(
+                        student=canonical_student,
+                        academic_year=report.academic_year,
+                        term=report.term,
+                    ).exclude(pk=report.pk).exists()
+                    if conflict:
+                        self.stdout.write(
+                            self.style.WARNING(
+                                "  Report conflict: canonical report already exists "
+                                f"for {report.academic_year} / Term {report.term.term_number}; "
+                                "legacy report left untouched."
+                            )
                         )
-                    )
-                elif old_report_count:
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"  Reports: {old_report_count} legacy report(s) remain attached to {legacy_email}."
-                        )
-                    )
+                    else:
+                        report.student = canonical_student
+                        report.save(update_fields=["student"])
+                        migrated_reports += 1
 
-                # Keep historical records intact but prevent the obsolete login
-                # and profile from being mistaken for the canonical learner.
                 legacy_student.is_active = False
-                legacy_student.save(update_fields=["is_active", "updated_at"])
+                legacy_student.save(update_fields=["is_active"])
                 legacy_user.is_active = False
-                legacy_user.save(update_fields=["is_active", "updated_at"])
+                legacy_user.save(update_fields=["is_active"])
                 deactivated_students += 1
+
+        # The original demo also used parent@keydemo.test. Reconcile that
+        # identity using the same explicit email mapping so the parent login and
+        # its authorization edges remain attached to the canonical demo graph.
+        legacy_parent_user = User.objects.filter(
+            email__iexact=self.LEGACY_PARENT_EMAIL
+        ).first()
+        canonical_parent_user = User.objects.filter(
+            email__iexact=self.CANONICAL_PARENT_EMAIL
+        ).first()
+        if legacy_parent_user:
+            legacy_parent = Parent.objects.filter(user=legacy_parent_user).first()
+            if legacy_parent:
+                if canonical_parent_user is None:
+                    if not apply_changes:
+                        self.stdout.write(
+                            f"{self.LEGACY_PARENT_EMAIL} -> {self.CANONICAL_PARENT_EMAIL}: "
+                            "parent account can be renamed in place."
+                        )
+                    else:
+                        legacy_parent_user.email = self.CANONICAL_PARENT_EMAIL
+                        legacy_parent_user.is_active = True
+                        legacy_parent_user.save(update_fields=["email", "is_active"])
+                        self.stdout.write(
+                            f"Reused legacy parent account as {self.CANONICAL_PARENT_EMAIL}."
+                        )
+                else:
+                    canonical_parent = Parent.objects.filter(
+                        user=canonical_parent_user
+                    ).first()
+                    if canonical_parent:
+                        parent_relationships = list(
+                            ParentStudentRelationship.objects.filter(parent=legacy_parent)
+                        )
+                        self.stdout.write(
+                            f"{self.LEGACY_PARENT_EMAIL} -> {self.CANONICAL_PARENT_EMAIL}: "
+                            f"{len(parent_relationships)} parent relationship(s)"
+                        )
+                        if apply_changes:
+                            with transaction.atomic():
+                                for relationship in parent_relationships:
+                                    duplicate = ParentStudentRelationship.objects.filter(
+                                        parent=canonical_parent,
+                                        student=relationship.student,
+                                    ).exclude(pk=relationship.pk).first()
+                                    if duplicate:
+                                        relationship.delete()
+                                    else:
+                                        relationship.parent = canonical_parent
+                                        relationship.save(update_fields=["parent"])
+                                    changed_relationships += 1
+                                legacy_parent.is_active = False
+                                legacy_parent.save(update_fields=["is_active"])
+                                legacy_parent_user.is_active = False
+                                legacy_parent_user.save(update_fields=["is_active"])
+                                deactivated_parents += 1
+                    else:
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f"SKIP {self.LEGACY_PARENT_EMAIL}: canonical user exists but has no Parent profile."
+                            )
+                        )
 
         if apply_changes:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Reconciliation complete: {changed_relationships} relationship(s) processed; "
-                    f"{deactivated_students} legacy student account(s) deactivated; {skipped} skipped."
+                    "Reconciliation complete: "
+                    f"{changed_relationships} relationship(s) processed; "
+                    f"{migrated_reports} AI report(s) migrated; "
+                    f"{deactivated_students} legacy student account(s) deactivated; "
+                    f"{deactivated_parents} legacy parent account(s) deactivated; "
+                    f"{skipped} student mapping(s) skipped."
                 )
             )
         else:
             self.stdout.write(
                 self.style.WARNING(
-                    "Dry run only. Re-run with --apply to reconcile the reported relationships and deactivate legacy student accounts."
+                    "Dry run only. Re-run with --apply to reconcile the reported identities, "
+                    "relationships and eligible AI reports."
                 )
             )
