@@ -12,6 +12,7 @@ from apps.assessments.models import AssessmentEvaluation, AssessmentSubmission, 
 from apps.assessments.permissions import UserRole, get_user_role, get_user_school
 from apps.attendance.models import AttendanceRecord
 from apps.enrollment.models import Enrollment
+from apps.parents.models import ParentStudentRelationship
 from apps.students.models import Student
 from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles, summary_table
 
@@ -23,22 +24,39 @@ class StudentReportView(views.APIView):
 
     def get(self, request):
         role = get_user_role(request.user)
-        if role not in {UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT}:
+        if role not in {UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT, UserRole.PARENT}:
             raise PermissionDenied("Your account does not have report access.")
         school = get_user_school(request.user)
-        if school is None and role != UserRole.ADMIN:
+        if school is None and role not in {UserRole.ADMIN, UserRole.PARENT}:
             raise PermissionDenied("Your account is not associated with an institution.")
+
         student_id = request.query_params.get("student")
         if role == UserRole.STUDENT:
             student = Student.objects.filter(user=request.user, is_active=True).first()
             if student_id and (student is None or str(student.id) != student_id):
                 raise PermissionDenied("Students may only access their own report.")
+        elif role == UserRole.PARENT:
+            if not student_id:
+                return JsonResponse({"detail": "Select one of your linked learners."}, status=400)
+            relationship = ParentStudentRelationship.objects.select_related("student", "student__school").filter(
+                parent__user=request.user,
+                parent__is_active=True,
+                student_id=student_id,
+                student__is_active=True,
+                is_active=True,
+                can_view_reports=True,
+            ).first()
+            if relationship is None:
+                raise PermissionDenied("You do not have report access for this learner.")
+            student = relationship.student
         else:
             student = Student.objects.filter(id=student_id, is_active=True).first()
+
         if student is None:
             return JsonResponse({"detail": "A valid student is required."}, status=400)
         if school is not None and student.school_id != school.id:
             raise PermissionDenied("The student does not belong to your institution.")
+
         year_id = request.query_params.get("academic_year")
         term_id = request.query_params.get("term")
         enrollments = Enrollment.objects.filter(student=student).select_related("classroom", "academic_year", "term")
@@ -49,6 +67,7 @@ class StudentReportView(views.APIView):
         enrollment = enrollments.order_by("-term__start_date").first()
         if enrollment is None:
             return JsonResponse({"detail": "No enrollment found for the selected period."}, status=404)
+
         enrollment_ids = Enrollment.objects.filter(student=student, academic_year=enrollment.academic_year, term=enrollment.term).values_list("id", flat=True)
         submissions = AssessmentSubmission.objects.filter(enrollment_id__in=enrollment_ids, assessment__lesson_session__timetable_entry__timetable__term=enrollment.term, evaluation__published=True).select_related("assessment", "evaluation", "assessment__lesson_session__timetable_entry__teacher_subject__subject").order_by("assessment__lesson_session__lesson_date")
         attendance = AttendanceRecord.objects.filter(enrollment_id__in=enrollment_ids)
