@@ -48,6 +48,24 @@ def get_user_school(user):
     return None
 
 
+def is_platform_admin(user):
+    """Return True only for unrestricted platform administrators."""
+    return bool(
+        user
+        and user.is_authenticated
+        and user.is_superuser
+        or (
+            user
+            and user.is_authenticated
+            and user.is_staff
+            and getattr(user, "school_admin_profile", None) is None
+            and getattr(user, "teacher_profile", None) is None
+            and getattr(user, "parent_profile", None) is None
+            and getattr(user, "student_profile", None) is None
+        )
+    )
+
+
 def teacher_can_access_classroom(user, classroom_id):
     """Return whether a teacher has an active assignment to a classroom."""
     if get_user_role(user) != UserRole.TEACHER:
