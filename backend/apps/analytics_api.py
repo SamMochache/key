@@ -43,6 +43,24 @@ class AnalyticsView(views.APIView):
             evaluations = evaluations.filter(submission__enrollment__student__user=request.user)
             competencies = competencies.filter(evaluation__submission__enrollment__student__user=request.user)
             classrooms = classrooms.filter(enrollments__student__user=request.user).distinct()
+        elif role == UserRole.TEACHER:
+            teacher = getattr(request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            assigned_enrollments = Enrollment.objects.filter(
+                classroom__teacher_assignments__teacher_id=teacher.id,
+                classroom__teacher_assignments__is_active=True,
+            ).distinct()
+            students = students.filter(enrollments__in=assigned_enrollments).distinct()
+            enrollments = enrollments.filter(id__in=assigned_enrollments.values("id"))
+            attendance = attendance.filter(enrollment_id__in=assigned_enrollments.values("id"))
+            submissions = submissions.filter(enrollment_id__in=assigned_enrollments.values("id"))
+            evaluations = evaluations.filter(submission__enrollment_id__in=assigned_enrollments.values("id"))
+            competencies = competencies.filter(evaluation__submission__enrollment_id__in=assigned_enrollments.values("id"))
+            classrooms = classrooms.filter(
+                teacher_assignments__teacher_id=teacher.id,
+                teacher_assignments__is_active=True,
+            ).distinct()
         elif school is not None:
             students = students.filter(school=school)
             enrollments = enrollments.filter(student__school=school)
