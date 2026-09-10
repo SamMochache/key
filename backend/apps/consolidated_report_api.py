@@ -13,8 +13,8 @@ from apps.assessments.permissions import UserRole, get_user_role, get_user_schoo
 from apps.attendance.models import AttendanceRecord
 from apps.enrollment.models import Enrollment
 from apps.portfolio.models import PortfolioItem
-from core.constants.enrollment import EnrollmentStatus
 from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles, summary_table
+from core.constants.enrollment import EnrollmentStatus
 
 
 class ConsolidatedReportView(views.APIView):
@@ -80,7 +80,7 @@ class ConsolidatedReportView(views.APIView):
         enrollment_ids = list(enrollments.values_list("id", flat=True))
         submissions = AssessmentSubmission.objects.filter(
             enrollment_id__in=enrollment_ids, evaluation__published=True, assessment__status="PUBLISHED"
-        ).select_related("evaluation")
+        )
         assessment_scores = {
             row["enrollment_id"]: row["average"]
             for row in submissions.values("enrollment_id").annotate(average=Avg("evaluation__percentage"))
@@ -109,17 +109,16 @@ class ConsolidatedReportView(views.APIView):
         ).values("evaluation__submission__enrollment_id", "level"):
             competency_data.setdefault(item["evaluation__submission__enrollment_id"], []).append(item["level"])
 
-        portfolio_items = PortfolioItem.objects.filter(
-            portfolio__student_id__in=enrollments.values_list("student_id", flat=True),
-            event_date__gte=term.start_date,
-            event_date__lte=term.end_date,
-        ).annotate(artifact_count=Count("artifacts", distinct=True))
         portfolio_data = {
             row["portfolio__student_id"]: {
                 "items": row["item_count"],
                 "artifacts": row["artifact_count"],
             }
-            for row in portfolio_items.values("portfolio__student_id").annotate(
+            for row in PortfolioItem.objects.filter(
+                portfolio__student_id__in=enrollments.values_list("student_id", flat=True),
+                event_date__gte=term.start_date,
+                event_date__lte=term.end_date,
+            ).values("portfolio__student_id").annotate(
                 item_count=Count("id", distinct=True),
                 artifact_count=Count("artifacts", distinct=True),
             )
