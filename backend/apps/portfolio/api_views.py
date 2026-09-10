@@ -23,6 +23,14 @@ class PortfolioAccessMixin:
         qs = Portfolio.objects.filter(student__school=school)
         if role == UserRole.STUDENT:
             qs = qs.filter(student__user=self.request.user)
+        elif role == UserRole.TEACHER:
+            teacher = getattr(self.request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            qs = qs.filter(
+                student__enrollments__classroom__teacher_assignments__teacher_id=teacher.id,
+                student__enrollments__classroom__teacher_assignments__is_active=True,
+            ).distinct()
         return qs
 
 
@@ -43,9 +51,8 @@ class PortfolioViewSet(PortfolioAccessMixin, viewsets.ModelViewSet):
             raise PermissionDenied("Only staff can create portfolios for learners.")
         student = serializer.validated_data["student"]
         if role == UserRole.TEACHER:
-            school = get_user_school(self.request.user)
-            if school is None or student.school_id != school.id:
-                raise PermissionDenied("You cannot create a portfolio for another institution.")
+            if not self.scoped_portfolios().filter(student_id=student.id).exists():
+                raise PermissionDenied("You can only create a portfolio for a learner in an assigned classroom.")
         serializer.save()
 
     @action(detail=False, methods=["get"])
