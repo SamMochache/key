@@ -1,6 +1,6 @@
 from datetime import date
 
-from django.db.models import Avg
+from django.db.models import Avg, Prefetch
 from rest_framework import permissions, views
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -30,34 +30,70 @@ class ParentChildrenView(views.APIView):
         if get_user_role(request.user) != UserRole.PARENT:
             raise PermissionDenied("Only parent accounts can access linked learners.")
 
-        relationships = ParentStudentRelationship.objects.filter(
-            parent__user=request.user,
-            parent__is_active=True,
-            is_active=True,
-            student__is_active=True,
-        ).select_related("student__user", "student__school")
+        # Prefetch the learner's related data in bounded queries instead of
+        # issuing several database queries for every linked child.
+        enrollment_qs = Enrollment.objects.select_related(
+            "classroom", "academic_year", "term"
+        ).prefetch_related(
+            Prefetch(
+                "attendance_records",
+                queryset=AttendanceRecord.objects.only("id", "enrollment_id", "status"),
+                to_attr="prefetched_attendance_records",
+            ),
+            Prefetch(
+                "assessment_submissions",
+                queryset=AssessmentEvaluation.objects.filter(
+                    published=True,
+                    percentage__isnull=False,
+                ).only("id", "submission_id", "percentage"),
+                to_attr="prefetched_evaluations",
+            ),
+        ).order_by("-academic_year__start_date", "-term__term_number")
+
+        portfolio_qs = PortfolioItem.objects.order_by("-event_date", "-created_at")
+        relationships = (
+            ParentStudentRelationship.objects.filter(
+                parent__user=request.user,
+                parent__is_active=True,
+                is_active=True,
+                student__is_active=True,
+            )
+            .select_related("student__user", "student__school")
+            .prefetch_related(
+                Prefetch("student__enrollments", queryset=enrollment_qs, to_attr="prefetched_enrollments"),
+                Prefetch("student__portfolio__items", queryset=portfolio_qs, to_attr="prefetched_portfolio_items"),
+            )
+        )
 
         results = []
         for relationship in relationships:
             student = relationship.student
-            enrollment = Enrollment.objects.filter(student=student).select_related(
-                "classroom", "academic_year", "term"
-            ).order_by("-academic_year__start_date", "-term__term_number").first()
+            enrollments = getattr(student, "prefetched_enrollments", [])
+            enrollment = enrollments[0] if enrollments else None
 
-            attendance = AttendanceRecord.objects.filter(enrollment__student=student)
-            attendance_total = attendance.count()
-            attendance_present = attendance.filter(status__in=["PRESENT", "LATE"]).count()
+            attendance_total = 0
+            attendance_present = 0
+            percentages = []
+            for child_enrollment in enrollments:
+                records = getattr(child_enrollment, "prefetched_attendance_records", [])
+                attendance_total += len(records)
+                attendance_present += sum(
+                    1 for record in records if record.status in {"PRESENT", "LATE"}
+                )
+                percentages.extend(
+                    float(evaluation.percentage)
+                    for evaluation in getattr(child_enrollment, "prefetched_evaluations", [])
+                    if evaluation.percentage is not None
+                )
+
             attendance_rate = round(attendance_present * 100 / attendance_total, 1) if attendance_total else None
-
-            growth = AssessmentEvaluation.objects.filter(
-                submission__enrollment__student=student,
-                published=True,
-                percentage__isnull=False,
-            ).aggregate(value=Avg("percentage"))["value"]
-
-            latest_portfolio = PortfolioItem.objects.filter(
-                portfolio__student=student
-            ).order_by("-event_date", "-created_at").first()
+            growth = sum(percentages) / len(percentages) if percentages else None
+            portfolio_items = getattr(
+                getattr(student, "portfolio", None),
+                "prefetched_portfolio_items",
+                [],
+            )
+            latest_portfolio = portfolio_items[0] if portfolio_items else None
 
             profile_photo = None
             if student.user.profile_photo:
@@ -88,7 +124,7 @@ class ParentChildrenView(views.APIView):
                     "status": enrollment.status,
                 } if enrollment else None,
                 "attendance_rate": attendance_rate,
-                "growth_index": round(float(growth), 1) if growth is not None else None,
+                "growth_index": round(growth, 1) if growth is not None else None,
                 "latest_portfolio": {
                     "id": str(latest_portfolio.id),
                     "title": latest_portfolio.title,
