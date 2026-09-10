@@ -2,7 +2,7 @@ from django.db.models import Q
 from rest_framework import permissions, viewsets
 from rest_framework.exceptions import PermissionDenied
 
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_classroom
 from core.constants.enrollment import EnrollmentStatus
 
 from .models import Enrollment
@@ -28,10 +28,7 @@ class EnrollmentAccessPermission(permissions.BasePermission):
         if role == UserRole.STUDENT:
             return request.method in permissions.SAFE_METHODS and obj.student_id == request.user.student_profile.id
         if role == UserRole.TEACHER:
-            return request.method in permissions.SAFE_METHODS and obj.classroom.teacher_subjects.filter(
-                teacher=request.user.teacher_profile,
-                is_active=True,
-            ).exists()
+            return request.method in permissions.SAFE_METHODS and teacher_can_access_classroom(request.user, obj.classroom_id)
         return False
 
 
@@ -54,9 +51,12 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
             if school is not None:
                 queryset = queryset.filter(classroom__school_id=school.id)
         elif role == UserRole.TEACHER:
+            teacher = getattr(user, "teacher_profile", None)
+            if teacher is None:
+                return queryset.none()
             queryset = queryset.filter(
-                classroom__teacher_subjects__teacher=user.teacher_profile,
-                classroom__teacher_subjects__is_active=True,
+                classroom__teacher_assignments__teacher_id=teacher.id,
+                classroom__teacher_assignments__is_active=True,
             ).distinct()
         elif role == UserRole.STUDENT:
             queryset = queryset.filter(student_id=user.student_profile.id)
@@ -73,6 +73,8 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
         if student:
             queryset = queryset.filter(student_id=student)
         if classroom:
+            if role == UserRole.TEACHER and not teacher_can_access_classroom(user, classroom):
+                return queryset.none()
             queryset = queryset.filter(classroom_id=classroom)
         if academic_year:
             queryset = queryset.filter(academic_year_id=academic_year)
