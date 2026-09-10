@@ -3,6 +3,7 @@ import os
 from collections import defaultdict
 from urllib import error, request
 
+from django.db.models import F
 from django.http import JsonResponse
 from django.utils import timezone
 from rest_framework import permissions, views
@@ -16,7 +17,12 @@ from apps.assessments.models import (
     AssessmentSubmission,
     CompetencyEvaluation,
 )
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from apps.assessments.permissions import (
+    UserRole,
+    get_user_role,
+    get_user_school,
+    teacher_can_access_enrollment,
+)
 from apps.attendance.models import AttendanceRecord
 from apps.enrollment.models import Enrollment
 from apps.portfolio.models import PortfolioItem
@@ -251,20 +257,42 @@ def _staff_school(request):
     return role, get_user_school(request.user)
 
 
+def _teacher_report_queryset(request, reports):
+    teacher = getattr(request.user, "teacher_profile", None)
+    school = get_user_school(request.user)
+    if teacher is None or school is None:
+        raise PermissionDenied("Your teacher profile or school could not be resolved.")
+    return reports.filter(
+        student__enrollments__classroom__teacher_assignments__teacher_id=teacher.id,
+        student__enrollments__classroom__teacher_assignments__is_active=True,
+        student__enrollments__classroom__school_id=school.id,
+        student__enrollments__academic_year_id=F("academic_year_id"),
+        student__enrollments__term_id=F("term_id"),
+        student__enrollments__status__in=REPORTABLE_ENROLLMENT_STATUSES,
+    ).distinct()
+
+
 def _get_report_for_staff(request, report_id):
-    _, school = _staff_school(request)
+    role, school = _staff_school(request)
     report = AINarrativeReport.objects.select_related(
         "student", "academic_year", "term", "generated_by", "reviewed_by", "published_by"
     ).filter(id=report_id).first()
     if report is None:
         return None
-    if school is not None and not Enrollment.objects.filter(
+
+    enrollments = Enrollment.objects.select_related("classroom").filter(
         student_id=report.student_id,
         academic_year_id=report.academic_year_id,
         term_id=report.term_id,
-        classroom__school_id=school.id,
-    ).exists():
-        raise PermissionDenied("The report does not belong to your institution.")
+        status__in=REPORTABLE_ENROLLMENT_STATUSES,
+    )
+    if school is not None:
+        enrollments = enrollments.filter(classroom__school_id=school.id)
+    enrollment = enrollments.first()
+    if enrollment is None:
+        raise PermissionDenied("The report's learner is not enrolled in an accessible academic period.")
+    if role == UserRole.TEACHER and not teacher_can_access_enrollment(request.user, enrollment):
+        raise PermissionDenied("You are not assigned to the learner's classroom for this academic period.")
     return report
 
 
@@ -282,6 +310,8 @@ class AINarrativeReportView(views.APIView):
             reports = reports.filter(academic_year_id=request.query_params["academic_year"])
         if request.query_params.get("term"):
             reports = reports.filter(term_id=request.query_params["term"])
+        if get_user_role(request.user) == UserRole.TEACHER:
+            reports = _teacher_report_queryset(request, reports)
         return JsonResponse({"results": [_report_payload(report) for report in reports[:50]]})
 
     def post(self, request):
@@ -309,6 +339,8 @@ class AINarrativeReportView(views.APIView):
             return JsonResponse({"detail": "The student is not enrolled in the selected academic period."}, status=404)
         if school is not None and enrollment.classroom.school_id != school.id:
             raise PermissionDenied("The student does not belong to your institution.")
+        if get_user_role(request.user) == UserRole.TEACHER and not teacher_can_access_enrollment(request.user, enrollment):
+            raise PermissionDenied("You are not assigned to the learner's classroom for this academic period.")
 
         existing = AINarrativeReport.objects.filter(student_id=student_id, academic_year_id=year.id, term_id=term.id).first()
         if existing and existing.status == AINarrativeReport.Status.PUBLISHED:

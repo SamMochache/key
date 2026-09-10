@@ -1,5 +1,7 @@
 from rest_framework.permissions import BasePermission
 
+from apps.academics.models import ClassroomTeacherAssignment
+
 
 class UserRole:
     ADMIN = "admin"
@@ -44,6 +46,32 @@ def get_user_school(user):
     if role == UserRole.STUDENT:
         return user.student_profile.school
     return None
+
+
+def teacher_can_access_classroom(user, classroom_id):
+    """Return whether a teacher has an active assignment to a classroom."""
+    if get_user_role(user) != UserRole.TEACHER:
+        return False
+    teacher = getattr(user, "teacher_profile", None)
+    if teacher is None:
+        return False
+    return ClassroomTeacherAssignment.objects.filter(
+        teacher_id=teacher.id,
+        classroom_id=classroom_id,
+        is_active=True,
+    ).exists()
+
+
+def teacher_can_access_enrollment(user, enrollment):
+    """Return whether a teacher is assigned to the enrollment's classroom.
+
+    Classrooms are already scoped to an academic year and term, so checking the
+    active classroom assignment also enforces the correct academic period.
+    """
+    if get_user_role(user) != UserRole.TEACHER:
+        return False
+    classroom_id = getattr(enrollment, "classroom_id", None)
+    return classroom_id is not None and teacher_can_access_classroom(user, classroom_id)
 
 
 class AdminOnly(BasePermission):
