@@ -1,6 +1,4 @@
-import { getAccessToken } from './api';
-
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace(/\/$/, '');
+import { authRequest } from './authRequest';
 
 export interface ParentStudentLink {
   id: string;
@@ -55,30 +53,13 @@ export interface ParentDashboardChild {
   };
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...(getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {}),
-      ...(options.headers || {}),
-    },
-  });
-  const text = await response.text().catch(() => '');
-  let payload: any = {};
-  try { payload = text ? JSON.parse(text) : {}; } catch { /* handled below */ }
-  if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status}).`);
-  return payload as T;
-}
-
 export async function listParents(search?: string) {
   const suffix = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
-  return request<{ results: ApiParent[] }>(`/parents/${suffix}`);
+  return authRequest<{ results: ApiParent[] }>(`/parents/${suffix}`);
 }
 
 export async function listMyChildren() {
-  return request<{ results: ParentDashboardChild[] }>('/parents/me/children/');
+  return authRequest<{ results: ParentDashboardChild[] }>('/parents/me/children/');
 }
 
 export async function createParent(payload: {
@@ -93,14 +74,14 @@ export async function createParent(payload: {
   can_view_reports?: boolean;
   is_primary_contact?: boolean;
 }) {
-  return request<ApiParent & { student: ParentStudentLink }>('/parents/', {
+  return authRequest<ApiParent & { student: ParentStudentLink }>('/parents/', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
 }
 
 export async function updateParent(id: string, payload: Record<string, unknown>) {
-  return request<{ id: string; full_name: string; is_active: boolean }>('/parents/', {
+  return authRequest<{ id: string; full_name: string; is_active: boolean }>('/parents/', {
     method: 'PATCH',
     body: JSON.stringify({ id, ...payload }),
   });
