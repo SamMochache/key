@@ -2,7 +2,29 @@ from rest_framework import serializers
 
 from apps.teachers.models import Teacher
 
-from .models import AcademicYear, CambridgeStage, Classroom, ClassroomTeacherAssignment, Curriculum, MontessoriLevel, Programme, StageSubject, Subject, Term
+from .models import AcademicYear, Classroom, ClassroomTeacherAssignment, Curriculum, MontessoriLevel, Programme, StageSubject, Subject, Term
+
+
+def _request_user_school(serializer):
+    request = serializer.context.get("request")
+    user = getattr(request, "user", None)
+    school_admin_profile = getattr(user, "school_admin_profile", None)
+    if school_admin_profile is not None and school_admin_profile.is_active:
+        return school_admin_profile.school
+    teacher_profile = getattr(user, "teacher_profile", None)
+    if teacher_profile is not None:
+        return teacher_profile.school
+    student_profile = getattr(user, "student_profile", None)
+    if student_profile is not None:
+        return student_profile.school
+    return None
+
+
+def _is_platform_admin(serializer):
+    request = serializer.context.get("request")
+    user = getattr(request, "user", None)
+    school_admin_profile = getattr(user, "school_admin_profile", None)
+    return bool(user and (user.is_superuser or (user.is_staff and not school_admin_profile)))
 
 
 class AcademicYearSerializer(serializers.ModelSerializer):
@@ -16,6 +38,10 @@ class AcademicYearSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         start_date = attrs.get("start_date", getattr(self.instance, "start_date", None))
         end_date = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        school = attrs.get("school", getattr(self.instance, "school", None))
+        user_school = _request_user_school(self)
+        if not _is_platform_admin(self) and user_school is not None and school is not None and school.id != user_school.id:
+            raise serializers.ValidationError({"school": "Academic years must belong to your institution."})
         if start_date and end_date and start_date > end_date:
             raise serializers.ValidationError({"end_date": "End date must be on or after the start date."})
         if attrs.get("is_current") and attrs.get("is_active") is False:
@@ -35,6 +61,9 @@ class TermSerializer(serializers.ModelSerializer):
         academic_year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
         start_date = attrs.get("start_date", getattr(self.instance, "start_date", None))
         end_date = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        user_school = _request_user_school(self)
+        if not _is_platform_admin(self) and user_school is not None and academic_year is not None and academic_year.school_id != user_school.id:
+            raise serializers.ValidationError({"academic_year": "Terms must belong to your institution."})
         if self.instance is None and academic_year and not academic_year.is_active:
             raise serializers.ValidationError({"academic_year": "Terms cannot be assigned to an inactive academic year."})
         if start_date and end_date and start_date > end_date:
@@ -83,7 +112,7 @@ class CambridgeStageSerializer(serializers.ModelSerializer):
 class MontessoriLevelSerializer(serializers.ModelSerializer):
     class Meta:
         model = MontessoriLevel
-        fields = ["id", "name", "code", "minimum_age", "maximum_age", "description", "display_order", "is_active", "created_at", "updated_at"]
+        fields = ["id", "name", "code", "minimum_age", "maximum_age", "description", "display_order", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
@@ -125,13 +154,10 @@ class ClassroomSerializer(serializers.ModelSerializer):
         return assignment.teacher.user.full_name if assignment else None
 
     def validate(self, attrs):
-        school = attrs.get("school")
-        if school is None and self.instance is not None:
-            school = self.instance.school
-        if school is None:
-            user = self.context.get("request").user if self.context.get("request") else None
-            teacher_profile = getattr(user, "teacher_profile", None)
-            school = teacher_profile.school if teacher_profile else None
+        school = attrs.get("school", getattr(self.instance, "school", None))
+        user_school = _request_user_school(self)
+        if not _is_platform_admin(self) and user_school is not None and school is not None and school.id != user_school.id:
+            raise serializers.ValidationError({"school": "Classes must belong to your institution."})
         teacher = attrs.get("primary_teacher")
         if teacher is not None and school is not None and teacher.school_id != school.id:
             raise serializers.ValidationError({"primary_teacher": "Teacher must belong to the same institution as the class."})
