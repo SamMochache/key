@@ -5,7 +5,7 @@ from rest_framework import permissions, status, views
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_enrollment
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school
 from apps.schools.models import School
 from apps.students.models import Student
 
