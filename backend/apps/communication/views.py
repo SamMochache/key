@@ -6,6 +6,7 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school
 from apps.schools.models import School
 from apps.notifications.services import notify
 from apps.notifications.models import Notification
@@ -16,39 +17,41 @@ from .serializers import CommunicationContactSerializer, CommunicationMessageSer
 User = get_user_model()
 
 
-def is_admin(user):
-    return bool(user.is_staff or user.is_superuser)
+def is_platform_admin(user):
+    """Platform staff can explicitly select an institution; school admins cannot."""
+    return bool(user.is_superuser or (user.is_staff and getattr(user, "school_admin_profile", None) is None))
 
 
 def user_school(user):
-    for relation in ("teacher_profile", "student_profile", "parent_profile"):
-        profile = getattr(user, relation, None)
-        if profile is not None:
-            return profile.school
-    return None
+    return get_user_school(user)
 
 
 def scoped_users(school=None):
     qs = User.objects.filter(is_active=True)
     profile_filter = Q(teacher_profile__isnull=False) | Q(student_profile__isnull=False) | Q(parent_profile__isnull=False)
     if school is not None:
-        profile_filter &= Q(teacher_profile__school=school) | Q(student_profile__school=school) | Q(parent_profile__school=school)
+        profile_filter &= (
+            Q(teacher_profile__school=school)
+            | Q(student_profile__school=school)
+            | Q(parent_profile__school=school)
+        )
     return qs.filter(profile_filter).distinct()
 
 
 def recipient_school(user):
-    for relation in ("teacher_profile", "student_profile", "parent_profile"):
-        profile = getattr(user, relation, None)
-        if profile is not None:
-            return profile.school
-    return None
+    return get_user_school(user)
 
 
 class CommunicationAccessPermission(permissions.BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        return is_admin(request.user) or user_school(request.user) is not None
+        return get_user_role(request.user) in {
+            UserRole.ADMIN,
+            UserRole.TEACHER,
+            UserRole.STUDENT,
+            UserRole.PARENT,
+        }
 
 
 class CommunicationMessageViewSet(viewsets.ModelViewSet):
@@ -59,12 +62,24 @@ class CommunicationMessageViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         qs = CommunicationMessage.objects.select_related("sender", "recipient", "school")
-        school_id = self.request.query_params.get("school")
-        school = get_object_or_404(School, pk=school_id) if is_admin(user) and school_id else user_school(user)
+        requested_school_id = self.request.query_params.get("school")
+        own_school = user_school(user)
+
+        if is_platform_admin(user) and requested_school_id:
+            school = get_object_or_404(School, pk=requested_school_id)
+        elif own_school is not None:
+            # Institution-scoped users may never switch their communication scope.
+            if requested_school_id and str(own_school.pk) != str(requested_school_id):
+                return qs.none()
+            school = own_school
+        else:
+            school = None
+
         if school is not None:
             qs = qs.filter(school=school)
-        elif not is_admin(user):
+        else:
             return qs.none()
+
         folder = self.request.query_params.get("folder", "inbox")
         qs = qs.filter(sender=user) if folder == "sent" else qs.filter(recipient=user)
         if self.request.query_params.get("unread") == "true":
@@ -76,23 +91,37 @@ class CommunicationMessageViewSet(viewsets.ModelViewSet):
         recipient_id = data.get("recipient")
         if not recipient_id:
             return Response({"recipient": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+
         sender_school = user_school(request.user)
-        school = sender_school
-        recipient_queryset = scoped_users(sender_school) if sender_school else scoped_users()
+        requested_school_id = data.get("school")
+        if sender_school is not None:
+            if requested_school_id and str(sender_school.pk) != str(requested_school_id):
+                return Response({"school": ["You cannot send messages outside your institution."]}, status=status.HTTP_403_FORBIDDEN)
+            school = sender_school
+            recipient_queryset = scoped_users(school)
+        elif is_platform_admin(request.user):
+            if not requested_school_id:
+                return Response({"school": ["This field is required for platform-scoped messaging."]}, status=status.HTTP_400_BAD_REQUEST)
+            school = get_object_or_404(School, pk=requested_school_id)
+            recipient_queryset = scoped_users(school)
+        else:
+            return Response({"detail": "Your account is not associated with an institution."}, status=status.HTTP_403_FORBIDDEN)
+
         recipient = get_object_or_404(recipient_queryset, pk=recipient_id)
         if recipient == request.user:
             return Response({"recipient": ["You cannot send a message to yourself."]}, status=status.HTTP_400_BAD_REQUEST)
-        if is_admin(request.user) and data.get("school"):
-            school = get_object_or_404(School, pk=data["school"])
-            recipient = get_object_or_404(scoped_users(school), pk=recipient_id)
-        if school is None:
-            school = recipient_school(recipient)
-        if school is None:
-            return Response({"detail": "The recipient is not associated with an institution."}, status=status.HTTP_400_BAD_REQUEST)
+
         serializer = self.get_serializer(data={**data, "school": str(school.pk), "recipient": str(recipient.pk)})
         serializer.is_valid(raise_exception=True)
         serializer.save(sender=request.user)
-        notify(recipient=recipient, school=school, title=f"New message from {request.user.get_full_name() or request.user.email}", body=serializer.instance.subject, notification_type=Notification.Type.MESSAGE, link="/communication")
+        notify(
+            recipient=recipient,
+            school=school,
+            title=f"New message from {request.user.get_full_name() or request.user.email}",
+            body=serializer.instance.subject,
+            notification_type=Notification.Type.MESSAGE,
+            link="/communication",
+        )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -108,11 +137,23 @@ class CommunicationContactsView(viewsets.ViewSet):
     permission_classes = [CommunicationAccessPermission]
 
     def list(self, request):
-        school = user_school(request.user)
-        if is_admin(request.user) and request.query_params.get("school"):
-            school = get_object_or_404(School, pk=request.query_params["school"])
+        own_school = user_school(request.user)
+        requested_school_id = request.query_params.get("school")
+        if own_school is not None:
+            if requested_school_id and str(own_school.pk) != str(requested_school_id):
+                return Response({"detail": "You cannot access contacts outside your institution."}, status=status.HTTP_403_FORBIDDEN)
+            school = own_school
+        elif is_platform_admin(request.user) and requested_school_id:
+            school = get_object_or_404(School, pk=requested_school_id)
+        else:
+            return Response({"detail": "An institution scope is required."}, status=status.HTTP_400_BAD_REQUEST)
+
         contacts = scoped_users(school).exclude(pk=request.user.pk)
         search = request.query_params.get("search", "").strip()
         if search:
-            contacts = contacts.filter(Q(first_name__icontains=search) | Q(last_name__icontains=search) | Q(email__icontains=search))
+            contacts = contacts.filter(
+                Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(email__icontains=search)
+            )
         return Response(CommunicationContactSerializer(contacts.order_by("first_name", "last_name"), many=True).data)
