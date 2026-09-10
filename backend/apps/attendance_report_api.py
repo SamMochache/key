@@ -9,7 +9,6 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.academics.models import Classroom
 from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_classroom
-from apps.attendance.models import AttendanceRecord
 from apps.enrollment.models import Enrollment
 from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles, summary_table
 
@@ -129,9 +128,10 @@ class AttendanceReportView(views.APIView):
                 ["Academic Year", selected_classroom.academic_year.name, "Term", f"Term {selected_classroom.term.term_number}", "Attendance Records", str(total_records)],
             ], [25 * mm, 55 * mm, 22 * mm, 45 * mm, 30 * mm, 55 * mm]),
             Spacer(1, 4 * mm),
-            summary_table([
+            summary_table(
                 ["Overall Rate", f"{overall_rate:.1f}%" if overall_rate is not None else "—", "Present", str(totals["PRESENT"]), "Late", str(totals["LATE"]), "Absent", str(totals["ABSENT"]), "Excused", str(totals["EXCUSED"])],
-            ], [28 * mm, 30 * mm, 25 * mm, 25 * mm, 22 * mm, 25 * mm, 30 * mm, 25 * mm, 30 * mm, 25 * mm]),
+                [28 * mm, 30 * mm, 25 * mm, 25 * mm, 22 * mm, 25 * mm, 30 * mm, 25 * mm, 30 * mm, 25 * mm],
+            ),
             Paragraph("Student Attendance", styles["heading"]),
             data_table(
                 [["Admission", "Student", "Present", "Late", "Absent", "Excused", "Attendance Rate"]] + rows,
