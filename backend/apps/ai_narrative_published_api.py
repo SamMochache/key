@@ -54,7 +54,15 @@ class PublishedAINarrativeReportView(views.APIView):
         reports = AINarrativeReport.objects.select_related("student__user", "academic_year", "term")
 
         if role == UserRole.STUDENT:
-            reports = reports.filter(student_id=request.user.student_profile.id, status=AINarrativeReport.Status.PUBLISHED)
+            # Resolve the report through the authenticated user's Student row,
+            # rather than dereferencing request.user.student_profile. This keeps
+            # the authorization edge anchored to the login identity and avoids
+            # leaking/losing reports when profile relationships are stale.
+            reports = reports.filter(
+                student__user_id=request.user.id,
+                student__is_active=True,
+                status=AINarrativeReport.Status.PUBLISHED,
+            )
         elif role == UserRole.PARENT:
             reports = reports.filter(
                 student__parent_relationships__parent__user_id=request.user.id,
@@ -98,7 +106,7 @@ def _published_report_for_user(request, report_id):
 
     role = get_user_role(request.user)
     if role == UserRole.STUDENT:
-        if report.student_id != request.user.student_profile.id:
+        if not report.student.is_active or report.student.user_id != request.user.id:
             raise PermissionDenied("You can only access your own published report.")
         return report
     if role == UserRole.PARENT:
