@@ -1,4 +1,4 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace(/\/$/, '');
+import { authRequest } from './authRequest';
 
 interface ParentChild {
   id: string;
@@ -33,17 +33,7 @@ interface ParentChild {
 }
 
 export async function listMyChildren(): Promise<ParentChild[]> {
-  const token = localStorage.getItem('key_access_token');
-  const response = await fetch(`${API_BASE_URL}/parents/me/children/`, {
-    headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    throw new Error(detail || `Unable to load linked learners (${response.status}).`);
-  }
-
-  const data = (await response.json()) as { results?: ParentChild[] };
+  const data = await authRequest<{ results?: ParentChild[] }>('/parents/me/children/');
   return data.results || [];
 }
 
