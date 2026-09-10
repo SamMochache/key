@@ -10,7 +10,6 @@ from reportlab.platypus import Paragraph, Spacer
 from apps.academics.models import Classroom
 from apps.assessments.models import AssessmentEvaluation
 from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_classroom
-from apps.attendance.models import AttendanceRecord
 from apps.enrollment.models import Enrollment
 from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles, summary_table
 
@@ -66,12 +65,12 @@ class ClassReportView(views.APIView):
             .select_related("student", "student__user")
             .annotate(
                 assessment_average=Avg(
-                    "assessment_submissions__evaluations__percentage",
-                    filter=Q(assessment_submissions__evaluations__published=True),
+                    "assessment_submissions__evaluation__percentage",
+                    filter=Q(assessment_submissions__evaluation__published=True),
                 ),
                 result_count=Count(
-                    "assessment_submissions__evaluations",
-                    filter=Q(assessment_submissions__evaluations__published=True),
+                    "assessment_submissions__evaluation",
+                    filter=Q(assessment_submissions__evaluation__published=True),
                     distinct=True,
                 ),
                 attendance_total=Count("attendance_records", distinct=True),
