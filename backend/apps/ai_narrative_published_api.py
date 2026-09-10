@@ -1,3 +1,4 @@
+import logging
 from io import BytesIO
 from xml.sax.saxutils import escape
 
@@ -19,6 +20,31 @@ from apps.reporting.pdf import (
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, Spacer
 
+logger = logging.getLogger(__name__)
+
+
+def _report_payload(report):
+    narrative = report.edited_content or report.generated_content or {}
+    if not isinstance(narrative, dict):
+        logger.warning("AI report %s has invalid narrative content", report.id)
+        narrative = {}
+    facts = report.source_data_snapshot or {}
+    if not isinstance(facts, dict):
+        logger.warning("AI report %s has invalid source snapshot", report.id)
+        facts = {}
+    return {
+        "id": str(report.id),
+        "student": str(report.student_id),
+        "student_name": report.student.user.get_full_name() or report.student.admission_number,
+        "academic_year": str(report.academic_year_id),
+        "academic_year_name": report.academic_year.name,
+        "term": str(report.term_id),
+        "term_number": report.term.term_number,
+        "narrative": narrative,
+        "facts": facts,
+        "published_at": report.published_at,
+    }
+
 
 class PublishedAINarrativeReportView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -32,6 +58,8 @@ class PublishedAINarrativeReportView(views.APIView):
         elif role == UserRole.PARENT:
             reports = reports.filter(
                 student__parent_relationships__parent__user_id=request.user.id,
+                student__parent_relationships__parent__is_active=True,
+                student__parent_relationships__parent__user__is_active=True,
                 student__parent_relationships__is_active=True,
                 student__parent_relationships__can_view_reports=True,
                 status=AINarrativeReport.Status.PUBLISHED,
@@ -54,19 +82,10 @@ class PublishedAINarrativeReportView(views.APIView):
 
         results = []
         for report in reports[:50]:
-            narrative = report.edited_content or report.generated_content
-            results.append({
-                "id": str(report.id),
-                "student": str(report.student_id),
-                "student_name": report.student.user.get_full_name() or report.student.admission_number,
-                "academic_year": str(report.academic_year_id),
-                "academic_year_name": report.academic_year.name,
-                "term": str(report.term_id),
-                "term_number": report.term.term_number,
-                "narrative": narrative,
-                "facts": report.source_data_snapshot,
-                "published_at": report.published_at,
-            })
+            try:
+                results.append(_report_payload(report))
+            except Exception:
+                logger.exception("Failed to serialize published AI report %s", report.id)
         return JsonResponse({"results": results})
 
 
@@ -82,23 +101,22 @@ def _published_report_for_user(request, report_id):
         if report.student_id != request.user.student_profile.id:
             raise PermissionDenied("You can only access your own published report.")
         return report
-
     if role == UserRole.PARENT:
         allowed = report.student.parent_relationships.filter(
             parent__user_id=request.user.id,
+            parent__is_active=True,
+            parent__user__is_active=True,
             is_active=True,
             can_view_reports=True,
         ).exists()
         if not allowed:
             raise PermissionDenied("You do not have report access for this student.")
         return report
-
     if role in {UserRole.ADMIN, UserRole.TEACHER}:
         school = get_user_school(request.user)
         if school is not None and report.student.school_id != school.id:
             raise PermissionDenied("The report does not belong to your institution.")
         return report
-
     raise PermissionDenied("You do not have access to published AI reports.")
 
 
@@ -119,8 +137,12 @@ class PublishedAINarrativeReportPdfView(views.APIView):
         if enrollment is None:
             return JsonResponse({"detail": "The report's enrollment could not be resolved."}, status=404)
 
-        narrative = report.edited_content or report.generated_content
+        narrative = report.edited_content or report.generated_content or {}
+        if not isinstance(narrative, dict):
+            narrative = {}
         facts = report.source_data_snapshot or {}
+        if not isinstance(facts, dict):
+            facts = {}
         learner = facts.get("learner", {})
         assessment = facts.get("assessment", {})
         attendance = facts.get("attendance", {})
@@ -137,7 +159,6 @@ class PublishedAINarrativeReportPdfView(views.APIView):
             "AI Learning Progress Report",
             f"{escape(report.academic_year.name)} · Term {report.term.term_number} · Teacher-reviewed and published",
         )
-
         story.append(summary_table([
             f"Learner\n{escape(str(learner.get('first_name') or report.student.user.first_name))}",
             f"Admission\n{escape(report.student.admission_number)}",
