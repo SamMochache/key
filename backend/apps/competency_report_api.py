@@ -9,7 +9,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.academics.models import Classroom
 from apps.assessments.models import CompetencyEvaluation
-from apps.assessments.permissions import UserRole, get_user_role, get_user_school
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school, teacher_can_access_classroom
 from apps.enrollment.models import Enrollment
 from apps.reporting.pdf import build_document, data_table, footer, info_table, report_header, report_styles
 from core.constants.competency import CompetencyLevel
@@ -50,6 +50,8 @@ class CompetencyOutcomesReportView(views.APIView):
                 return JsonResponse({"detail": "Classroom not found."}, status=404)
             if school is not None and classroom.school_id != school.id:
                 raise PermissionDenied("The classroom does not belong to your institution.")
+            if role == UserRole.TEACHER and not teacher_can_access_classroom(request.user, classroom.id):
+                raise PermissionDenied("You are not assigned to this classroom.")
             if year_id and str(classroom.academic_year_id) != year_id:
                 return JsonResponse({"detail": "The classroom does not belong to the selected academic year."}, status=400)
             if term_id and str(classroom.term_id) != term_id:
@@ -60,6 +62,14 @@ class CompetencyOutcomesReportView(views.APIView):
         )
         if school is not None:
             enrollments = enrollments.filter(classroom__school=school)
+        if role == UserRole.TEACHER:
+            teacher = getattr(request.user, "teacher_profile", None)
+            if teacher is None:
+                raise PermissionDenied("Teacher profile not found.")
+            enrollments = enrollments.filter(
+                classroom__teacher_assignments__teacher_id=teacher.id,
+                classroom__teacher_assignments__is_active=True,
+            ).distinct()
         if classroom is not None:
             enrollments = enrollments.filter(classroom=classroom)
         if year_id:
