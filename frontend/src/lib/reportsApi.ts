@@ -25,9 +25,6 @@ async function downloadPdf(path: string, params: Record<string, string>, retry =
   const token = getAccessToken();
   const response = await fetch(`${API_BASE_URL}${path}?${query.toString()}`, {
     headers: {
-      // DRF negotiates the renderer before returning the Django FileResponse.
-      // Asking for application/pdf here can therefore produce HTTP 406 when
-      // the APIView uses JSON renderers. The endpoint itself returns a PDF.
       Accept: '*/*',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
@@ -128,6 +125,62 @@ export interface PublishedAINarrativeResponse {
   published_at: string | null;
 }
 
+function normalizePublishedAIReport(report: any): PublishedAINarrativeResponse {
+  const rawFacts = report?.facts && typeof report.facts === 'object' ? report.facts : {};
+  const rawNarrative = report?.narrative && typeof report.narrative === 'object' ? report.narrative : {};
+
+  const learner = rawFacts.learner && typeof rawFacts.learner === 'object' ? rawFacts.learner : {};
+  const period = rawFacts.period && typeof rawFacts.period === 'object' ? rawFacts.period : {};
+  const assessment = rawFacts.assessment && typeof rawFacts.assessment === 'object' ? rawFacts.assessment : {};
+  const attendance = rawFacts.attendance && typeof rawFacts.attendance === 'object' ? rawFacts.attendance : {};
+  const portfolio = rawFacts.portfolio && typeof rawFacts.portfolio === 'object' ? rawFacts.portfolio : {};
+
+  const narrative = {
+    summary: String(rawNarrative.summary ?? rawNarrative.overall_progress ?? ''),
+    strengths: String(rawNarrative.strengths ?? ''),
+    development_areas: String(rawNarrative.development_areas ?? ''),
+    next_steps: String(rawNarrative.next_steps ?? rawNarrative.suggested_next_steps ?? ''),
+    teacher_note: String(rawNarrative.teacher_note ?? rawNarrative.teacher_review_note ?? ''),
+  };
+
+  return {
+    id: String(report?.id ?? ''),
+    student: String(report?.student ?? rawFacts.student_id ?? ''),
+    student_name: String(report?.student_name ?? rawFacts.student_name ?? learner.first_name ?? 'Learner'),
+    academic_year: String(report?.academic_year ?? ''),
+    academic_year_name: String(report?.academic_year_name ?? period.academic_year ?? rawFacts.academic_year ?? ''),
+    term: String(report?.term ?? ''),
+    term_number: Number(report?.term_number ?? period.term ?? rawFacts.term_number ?? 0),
+    narrative,
+    facts: {
+      learner: {
+        first_name: String(learner.first_name ?? rawFacts.student_name?.split?.(' ')?.[0] ?? 'Learner'),
+        admission_number: String(learner.admission_number ?? rawFacts.admission_number ?? ''),
+        class: String(learner.class ?? 'Not recorded'),
+        stage: learner.stage == null ? null : String(learner.stage),
+      },
+      period: {
+        academic_year: String(period.academic_year ?? rawFacts.academic_year ?? report?.academic_year_name ?? ''),
+        term: Number(period.term ?? rawFacts.term_number ?? report?.term_number ?? 0),
+      },
+      assessment: {
+        published_results: Number(assessment.published_results ?? 0),
+        average_percentage: assessment.average_percentage == null ? null : Number(assessment.average_percentage),
+      },
+      attendance: {
+        recorded_sessions: Number(attendance.recorded_sessions ?? 0),
+        attendance_percentage: attendance.attendance_percentage == null ? null : Number(attendance.attendance_percentage),
+      },
+      competencies: Array.isArray(rawFacts.competencies) ? rawFacts.competencies : [],
+      portfolio: {
+        items: Number(portfolio.items ?? 0),
+        artifacts: Number(portfolio.artifacts ?? 0),
+      },
+    },
+    published_at: report?.published_at ?? null,
+  };
+}
+
 async function jsonRequest(path: string, options: RequestInit = {}, retry = true) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
@@ -184,7 +237,10 @@ export async function listPublishedAINarrativeReports(params: { student?: string
   if (params.academicYear) query.set('academic_year', params.academicYear);
   if (params.term) query.set('term', params.term);
   const suffix = query.toString() ? `?${query.toString()}` : '';
-  return jsonRequest(`/reports/ai-narrative/published/${suffix}`) as Promise<{ results: PublishedAINarrativeResponse[] }>;
+  const payload = await jsonRequest(`/reports/ai-narrative/published/${suffix}`) as { results?: unknown[] };
+  return {
+    results: Array.isArray(payload.results) ? payload.results.map(normalizePublishedAIReport) : [],
+  };
 }
 
 export async function downloadPublishedAINarrativePdf(id: string) {
