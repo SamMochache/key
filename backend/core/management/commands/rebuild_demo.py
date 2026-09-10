@@ -1,5 +1,6 @@
 from django.core import management
 from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
 
 from apps.assessments.models import AINarrativeReport
 from apps.identity.models import User
@@ -89,44 +90,31 @@ class Command(BaseCommand):
         # Student rows. This deliberately avoids names/email lookups later.
         year = school.academic_years.get(name="2026")
         term = year.terms.get(term_number=1)
+        now = timezone.now()
         for student in students:
+            narrative = {
+                "overall_progress": (
+                    f"{student.user.first_name} has made a positive start to the 2026 school year, "
+                    "with strong participation in the published learning activities."
+                ),
+                "strengths": (
+                    "Consistent engagement and strong performance across the published assessment results."
+                ),
+                "areas_for_development": (
+                    "Continue building a broad portfolio of learning evidence and reflections."
+                ),
+                "suggested_next_steps": (
+                    "Participate actively in classroom projects and add evidence of learning to the portfolio."
+                ),
+                "teacher_review_note": "Positive progress noted during Term 1.",
+            }
             AINarrativeReport.objects.update_or_create(
                 student=student,
                 academic_year=year,
                 term=term,
                 defaults={
-                    "generated_content": {
-                        "overall_progress": (
-                            f"{student.user.first_name} has made a positive start to the 2026 school year, "
-                            "with strong participation in the published learning activities."
-                        ),
-                        "strengths": (
-                            "Consistent engagement and strong performance across the published assessment results."
-                        ),
-                        "areas_for_development": (
-                            "Continue building a broad portfolio of learning evidence and reflections."
-                        ),
-                        "suggested_next_steps": (
-                            "Participate actively in classroom projects and add evidence of learning to the portfolio."
-                        ),
-                        "teacher_review_note": "Positive progress noted during Term 1.",
-                    },
-                    "edited_content": {
-                        "overall_progress": (
-                            f"{student.user.first_name} has made a positive start to the 2026 school year, "
-                            "with strong participation in the published learning activities."
-                        ),
-                        "strengths": (
-                            "Consistent engagement and strong performance across the published assessment results."
-                        ),
-                        "areas_for_development": (
-                            "Continue building a broad portfolio of learning evidence and reflections."
-                        ),
-                        "suggested_next_steps": (
-                            "Participate actively in classroom projects and add evidence of learning to the portfolio."
-                        ),
-                        "teacher_review_note": "Positive progress noted during Term 1.",
-                    },
+                    "generated_content": narrative,
+                    "edited_content": narrative,
                     "source_data_snapshot": {
                         "student_id": str(student.id),
                         "student_name": student.user.full_name,
@@ -139,8 +127,8 @@ class Command(BaseCommand):
                     "reviewed_by": admin,
                     "published_by": admin,
                     "model_used": "demo-seed-grounded",
-                    "reviewed_at": __import__("django.utils.timezone", fromlist=["now"]).now(),
-                    "published_at": __import__("django.utils.timezone", fromlist=["now"]).now(),
+                    "reviewed_at": now,
+                    "published_at": now,
                 },
             )
 
