@@ -23,6 +23,10 @@ class ClassroomTeacherAssignment(BaseModel):
         verbose_name = _("Classroom Teacher Assignment")
         verbose_name_plural = _("Classroom Teacher Assignments")
         constraints = [models.UniqueConstraint(fields=["classroom", "teacher", "role"], name="unique_classroom_teacher_role")]
+        indexes = [
+            models.Index(fields=["teacher", "is_active"], name="cta_teacher_active_idx"),
+            models.Index(fields=["classroom", "is_active"], name="cta_class_active_idx"),
+        ]
 
     def __str__(self):
         return f"{self.classroom} — {self.teacher} ({self.get_role_display()})"
