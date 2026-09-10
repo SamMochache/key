@@ -68,8 +68,15 @@ class StudentSerializer(serializers.ModelSerializer):
                 )
 
         if self.instance is None:
-            required_user_fields = ("first_name", "last_name", "account_email")
-            missing = [field for field in required_user_fields if not user_data.get(field)]
+            # Fields using source="user.*" arrive here nested under attrs["user"].
+            # The API field is called account_email, while the nested User key is email.
+            missing = []
+            if not user_data.get("first_name"):
+                missing.append("first_name")
+            if not user_data.get("last_name"):
+                missing.append("last_name")
+            if not user_data.get("email"):
+                missing.append("account_email")
             if not attrs.get("password"):
                 missing.append("password")
             if missing:
@@ -77,9 +84,12 @@ class StudentSerializer(serializers.ModelSerializer):
                     field: "This field is required when creating a student."
                     for field in missing
                 })
+
+            if User.objects.filter(email=user_data["email"]).exists():
+                raise serializers.ValidationError({"account_email": "This email is already in use."})
         else:
-            if "account_email" in user_data:
-                qs = User.objects.filter(email=user_data["account_email"])
+            if "email" in user_data:
+                qs = User.objects.filter(email=user_data["email"])
                 if qs.exclude(pk=self.instance.user_id).exists():
                     raise serializers.ValidationError({"account_email": "This email is already in use."})
 
