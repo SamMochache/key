@@ -101,7 +101,7 @@ class ParentManagementView(views.APIView):
         school = School.objects.filter(id=school_id, is_active=True).first()
         if school is None:
             return Response({"detail": "The selected school was not found."}, status=404)
-        if role != UserRole.ADMIN and (staff_school is None or school.id != staff_school.id):
+        if staff_school is not None and school.id != staff_school.id:
             raise PermissionDenied("You can only manage parent accounts for your institution.")
 
         student = Student.objects.filter(id=student_id, school_id=school.id, is_active=True).select_related("user").first()
@@ -162,7 +162,7 @@ class ParentManagementView(views.APIView):
         parent = Parent.objects.select_related("user", "school").filter(id=parent_id).first()
         if parent is None:
             return Response({"detail": "Parent not found."}, status=404)
-        if role != UserRole.ADMIN and (staff_school is None or parent.school_id != staff_school.id):
+        if staff_school is not None and parent.school_id != staff_school.id:
             raise PermissionDenied("The parent does not belong to your institution.")
         if role == UserRole.TEACHER and not self._teacher_parent_scope(request).filter(id=parent.id).exists():
             raise PermissionDenied("You can only manage parents linked to learners in your assigned classrooms.")
