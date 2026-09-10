@@ -17,6 +17,7 @@ from apps.reporting.pdf import (
     report_styles,
     summary_table,
 )
+from core.constants.enrollment import EnrollmentStatus
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, Spacer
 
@@ -54,10 +55,6 @@ class PublishedAINarrativeReportView(views.APIView):
         reports = AINarrativeReport.objects.select_related("student__user", "academic_year", "term")
 
         if role == UserRole.STUDENT:
-            # Resolve the report through the authenticated user's Student row,
-            # rather than dereferencing request.user.student_profile. This keeps
-            # the authorization edge anchored to the login identity and avoids
-            # leaking/losing reports when profile relationships are stale.
             reports = reports.filter(
                 student__user_id=request.user.id,
                 student__is_active=True,
@@ -140,7 +137,13 @@ class PublishedAINarrativeReportPdfView(views.APIView):
             student_id=report.student_id,
             academic_year_id=report.academic_year_id,
             term_id=report.term_id,
-            status__in=["ACTIVE", "COMPLETED"],
+            status__in=[
+                EnrollmentStatus.ENROLLED,
+                EnrollmentStatus.PROMOTED,
+                EnrollmentStatus.TRANSFERRED,
+                EnrollmentStatus.WITHDRAWN,
+                EnrollmentStatus.GRADUATED,
+            ],
         ).first()
         if enrollment is None:
             return JsonResponse({"detail": "The report's enrollment could not be resolved."}, status=404)
