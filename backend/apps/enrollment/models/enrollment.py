@@ -74,6 +74,17 @@ class Enrollment(BaseModel):
             )
         ]
 
+        indexes = [
+            models.Index(
+                fields=["classroom", "academic_year", "term", "status"],
+                name="enroll_scope_status_idx",
+            ),
+            models.Index(
+                fields=["student", "status"],
+                name="enroll_student_status_idx",
+            ),
+        ]
+
     def __str__(self):
         return (
             f"{self.student} - "
