@@ -36,8 +36,9 @@ class School(BaseModel):
     )
 
     website = models.URLField(
-        blank=True,
-    )
+    _("Website"),
+    blank=True,
+)
 
     logo = models.ImageField(
         _("Logo"),
