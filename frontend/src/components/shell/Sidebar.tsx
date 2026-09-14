@@ -3,7 +3,6 @@ import { NavLink } from 'react-router-dom';
 import * as Icons from 'lucide-react';
 import { navGroups } from './nav';
 import { useApp } from '../../context/AppContext';
-import { LOGO_URL } from '../../lib/data';
 import { cn } from '../../lib/utils';
 
 function Icon({ name, className }: { name: string; className?: string }) {
@@ -33,11 +32,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         )}
       >
         <div className="flex items-center gap-3 px-5 h-16 shrink-0">
-          <img
-            src={LOGO_URL}
-            alt=""
-            className="h-9 w-9 rounded-xl object-contain bg-brand-50 dark:bg-slate-800 p-0.5"
-          />
+          <div
+            aria-hidden="true"
+            className="h-9 w-9 rounded-xl bg-brand-600 text-white flex items-center justify-center font-display font-extrabold text-sm shadow-soft"
+          >
+            KEY
+          </div>
           <div className="leading-tight min-w-0">
             <p className="font-display font-extrabold text-slate-800 dark:text-white text-[15px] truncate">
               {schoolName}
