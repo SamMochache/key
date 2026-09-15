@@ -174,3 +174,56 @@ class BackendTenantSmokeTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["school"], str(self.school_a.id))
+
+
+class PlatformAdminContractTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.platform_user = User.objects.create_user(
+            email="platform-admin@test.local",
+            password="TestPass123!",
+            first_name="Platform",
+            last_name="Admin",
+        )
+        self.platform_user.is_staff = True
+        self.platform_user.save(update_fields=["is_staff"])
+
+        self.school_admin = User.objects.create_user(
+            email="school-admin@test.local",
+            password="TestPass123!",
+            first_name="School",
+            last_name="Admin",
+        )
+        self.school = School.objects.create(name="School A", short_name="A")
+        SchoolAdministrator.objects.create(user=self.school_admin, school=self.school)
+
+    def test_platform_admin_current_user_has_platform_flag_and_no_school(self):
+        self.client.force_authenticate(self.platform_user)
+        response = self.client.get("/api/auth/me/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["role"], "admin")
+        self.assertTrue(response.data["platform_admin"])
+        self.assertNotIn("school_id", response.data)
+
+    def test_school_admin_current_user_is_not_platform_admin(self):
+        self.client.force_authenticate(self.school_admin)
+        response = self.client.get("/api/auth/me/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["role"], "admin")
+        self.assertNotIn("platform_admin", response.data)
+        self.assertEqual(response.data["school_id"], str(self.school.id))
+
+    def test_platform_admin_can_list_all_schools(self):
+        School.objects.create(name="School B", short_name="B")
+        self.client.force_authenticate(self.platform_user)
+        response = self.client.get("/api/schools/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 2)
+
+    def test_school_admin_only_sees_own_school(self):
+        School.objects.create(name="School B", short_name="B")
+        self.client.force_authenticate(self.school_admin)
+        response = self.client.get("/api/schools/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], str(self.school.id))
