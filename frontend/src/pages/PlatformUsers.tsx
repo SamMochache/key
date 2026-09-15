@@ -1,0 +1,26 @@
+import React, { useEffect, useState } from 'react';
+import { Search, ShieldCheck, UserRound } from 'lucide-react';
+import { listSchools, type School } from '../lib/api';
+import { listPlatformUsers, setPlatformUserStatus, type PlatformUser } from '../lib/platformApi';
+
+export function PlatformUsers() {
+  const [users, setUsers] = useState<PlatformUser[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [search, setSearch] = useState('');
+  const [role, setRole] = useState('');
+  const [school, setSchool] = useState('');
+  const [active, setActive] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = async () => { setLoading(true); setError(''); try { const [u,s] = await Promise.all([listPlatformUsers({ search, role, school, active }), listSchools()]); setUsers(u.results); setSchools(s); } catch (err) { setError(err instanceof Error ? err.message : 'Unable to load users.'); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, [role, school, active]);
+  const filtered = users.filter((user) => `${user.full_name} ${user.email}`.toLowerCase().includes(search.toLowerCase()));
+  const changeStatus = async (user: PlatformUser) => { try { const updated = await setPlatformUserStatus(user.id, !user.is_active); setUsers((current) => current.map((item) => item.id === user.id ? updated : item)); } catch (err) { setError(err instanceof Error ? err.message : 'Unable to change user status.'); } };
+
+  return <div className="space-y-6"><section><p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-600">Platform</p><h1 className="mt-2 text-3xl font-extrabold">Users</h1><p className="mt-2 text-sm text-slate-500">Central account visibility and access control across every institution.</p></section>
+    {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</div>}
+    <div className="grid gap-3 lg:grid-cols-[1fr_180px_220px_150px]"><div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900"><Search className="h-5 w-5 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && load()} placeholder="Search name or email…" className="w-full bg-transparent text-sm outline-none" /></div><select value={role} onChange={(e) => setRole(e.target.value)} className="rounded-2xl border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-900"><option value="">All roles</option><option value="platform_admin">Platform admin</option><option value="admin">School admin</option><option value="teacher">Teacher</option><option value="parent">Parent</option><option value="student">Student</option></select><select value={school} onChange={(e) => setSchool(e.target.value)} className="rounded-2xl border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-900"><option value="">All institutions</option>{schools.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select value={active} onChange={(e) => setActive(e.target.value)} className="rounded-2xl border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-900"><option value="">All status</option><option value="true">Active</option><option value="false">Suspended</option></select></div>
+    <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-900"><div className="hidden grid-cols-[1.5fr_1fr_1fr_140px] gap-4 border-b border-slate-100 px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-400 md:grid dark:border-slate-800"><span>User</span><span>Role</span><span>Institution</span><span>Status</span></div><div className="divide-y divide-slate-100 dark:divide-slate-800">{loading ? <div className="px-6 py-12 text-center text-sm text-slate-500">Loading users…</div> : filtered.map((user) => <div key={user.id} className="grid gap-4 px-6 py-5 md:grid-cols-[1.5fr_1fr_1fr_140px] md:items-center"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"><UserRound className="h-4 w-4" /></div><div><p className="font-bold">{user.full_name}</p><p className="text-sm text-slate-500">{user.email}</p></div></div><span className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold dark:bg-slate-800"><ShieldCheck className="h-3.5 w-3.5" />{user.role.replace('_',' ')}</span><span className="text-sm text-slate-600 dark:text-slate-300">{user.school_name || 'Platform-wide'}</span><button disabled={user.role === 'platform_admin'} onClick={() => changeStatus(user)} className={`w-fit rounded-xl px-3 py-2 text-xs font-bold ${user.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'} disabled:cursor-not-allowed disabled:opacity-50`}>{user.is_active ? 'Active · Suspend' : 'Suspended · Reactivate'}</button></div>)}{!loading && filtered.length === 0 && <div className="px-6 py-12 text-center text-sm text-slate-500">No users match the current filters.</div>}</div></section>
+  </div>;
+}
