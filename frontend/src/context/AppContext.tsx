@@ -31,7 +31,9 @@ interface AppState {
 }
 
 const AppContext = createContext<AppState | null>(null);
-const supportedRoles: Role[] = ['admin', 'teacher', 'parent', 'student'];
+const supportedRoles: Role[] = ['admin', 'platform_admin', 'teacher', 'parent', 'student'];
+
+type PlatformAwareUser = CurrentUser & { platform_admin?: boolean };
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<Role>('student');
@@ -60,16 +62,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAuthStatus('loading');
     try {
       const currentUser = await getCurrentUser();
-      if (!supportedRoles.includes(currentUser.role as Role)) {
+      const platformAwareUser = currentUser as PlatformAwareUser;
+      const resolvedRole: Role = platformAwareUser.platform_admin ? 'platform_admin' : (currentUser.role as Role);
+
+      if (!supportedRoles.includes(resolvedRole)) {
         throw new Error('This account does not have a supported application role.');
       }
 
       setUser(currentUser);
-      setRole(currentUser.role as Role);
+      setRole(resolvedRole);
 
-      // Institution administrators, teachers, parents, and students all carry
-      // school_id. Platform staff/superusers intentionally do not.
-      if (currentUser.school_id) {
+      // Platform administrators intentionally have no school context. All
+      // institution-scoped users carry school_id and resolve their own school.
+      if (resolvedRole !== 'platform_admin' && currentUser.school_id) {
         setSchoolStatus('loading');
         try {
           const currentSchool = await getMySchool();
