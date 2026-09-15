@@ -1,0 +1,50 @@
+name: Apply student AI report navigation fix
+
+on:
+  push:
+    branches:
+      - fix/student-ai-report-navigation
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/student-ai-report-navigation
+
+      - name: Update student profile tab navigation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('frontend/src/pages/StudentProfile.tsx')
+          text = path.read_text()
+
+          text = text.replace(
+              "import { useParams, Link } from 'react-router-dom';",
+              "import { useParams, Link, useSearchParams } from 'react-router-dom';",
+          )
+          text = text.replace(
+              "const TABS = ['Overview', 'Enrollment', 'Attendance', 'Assessments', 'Assignments', 'Behaviour', 'Portfolio', 'Teacher Notes', 'AI Reports'];",
+              "const TABS = ['Overview', 'Enrollment', 'Attendance', 'Assessments', 'Assignments', 'Behaviour', 'Portfolio', 'Teacher Notes', 'AI Reports'] as const;\nconst TAB_ALIASES: Record<string, typeof TABS[number]> = Object.fromEntries(TABS.map((value) => [value.toLowerCase().replace(/\\s+/g, '-'), value])) as Record<string, typeof TABS[number]>;",
+          )
+          text = text.replace(
+              "  const { id } = useParams();\n  const [student, setStudent] = useState<ApiStudent | null>(null);\n  const [enrollments, setEnrollments] = useState<ApiEnrollment[]>([]);\n  const [tab, setTab] = useState('Overview');",
+              "  const { id } = useParams();\n  const [searchParams, setSearchParams] = useSearchParams();\n  const [student, setStudent] = useState<ApiStudent | null>(null);\n  const [enrollments, setEnrollments] = useState<ApiEnrollment[]>([]);\n  const requestedTab = searchParams.get('tab') || 'overview';\n  const tab = TAB_ALIASES[requestedTab.toLowerCase()] || 'Overview';\n\n  const setTab = (nextTab: typeof TABS[number]) => {\n    const nextParams = new URLSearchParams(searchParams);\n    if (nextTab === 'Overview') nextParams.delete('tab');\n    else nextParams.set('tab', nextTab.toLowerCase().replace(/\\s+/g, '-'));\n    setSearchParams(nextParams);\n  };",
+          )
+          path.write_text(text)
+      - name: Verify navigation changes
+        run: |
+          grep -n "useSearchParams\|TAB_ALIASES\|requestedTab\|setSearchParams" frontend/src/pages/StudentProfile.tsx
+      - name: Commit fix and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/pages/StudentProfile.tsx
+          git rm .github/workflows/apply-student-ai-navigation-fix.yml
+          git commit -m "fix(frontend): persist student profile tab in URL"
+          git push origin HEAD:fix/student-ai-report-navigation
