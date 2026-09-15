@@ -1,0 +1,13 @@
+import React, { useEffect, useState } from 'react';
+import { Activity, Building2, GraduationCap, Users } from 'lucide-react';
+import { listSchools, type School } from '../lib/api';
+import { getPlatformSummary, type PlatformSummary } from '../lib/platformApi';
+
+export function PlatformAnalytics() {
+  const [summary, setSummary] = useState<PlatformSummary | null>(null);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [error, setError] = useState('');
+  useEffect(() => { Promise.all([getPlatformSummary(), listSchools()]).then(([s, schools]) => { setSummary(s); setSchools(schools); }).catch((err) => setError(err instanceof Error ? err.message : 'Unable to load analytics.')); }, []);
+  const cards = summary ? [{ label:'Users', value:summary.users, icon:Users }, { label:'Students', value:summary.students, icon:GraduationCap }, { label:'Teachers', value:summary.teachers, icon:Activity }, { label:'Institutions', value:summary.institutions, icon:Building2 }] : [];
+  return <div className="space-y-6"><section><p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-600">Platform</p><h1 className="mt-2 text-3xl font-extrabold">Analytics</h1><p className="mt-2 text-sm text-slate-500">Live operational metrics across the KEY institution network.</p></section>{error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</div>}<section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({label,value,icon:Icon})=><div key={label} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900"><div className="flex justify-between"><span className="text-sm font-semibold text-slate-500">{label}</span><Icon className="h-5 w-5 text-brand-600"/></div><p className="mt-4 text-3xl font-extrabold">{value}</p></div>)}</section><section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-soft dark:border-slate-800 dark:bg-slate-900"><h2 className="font-extrabold">Institution distribution</h2><p className="mt-1 text-sm text-slate-500">Current student and teacher footprint by institution.</p><div className="mt-6 space-y-5">{schools.map((school)=><div key={school.id}><div className="mb-2 flex justify-between text-sm"><span className="font-bold">{school.name}</span><span className="text-slate-500">{school.student_count} students · {school.teacher_count} teachers</span></div><div className="h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-brand-500" style={{width:`${summary?.students ? Math.max(8, ((school.student_count || 0) / summary.students) * 100) : 0}%`}}/></div></div>)}</div></section></div>;
+}
