@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
+from apps.assessments.permissions import UserRole, get_user_role, get_user_school, is_platform_admin
 from core.constants.timetable import TimetableStatus
 
 from .models.period import Period
@@ -14,17 +15,11 @@ from .serializers import PeriodSerializer, TimetableEntrySerializer, TimetableSe
 
 
 def is_admin(user):
-    return bool(user.is_staff or user.is_superuser)
+    return get_user_role(user) == UserRole.ADMIN
 
 
 def user_school(user):
-    teacher = getattr(user, "teacher_profile", None)
-    if teacher is not None:
-        return teacher.school
-    student = getattr(user, "student_profile", None)
-    if student is not None:
-        return student.school
-    return None
+    return get_user_school(user)
 
 
 class TimetableAccessPermission(permissions.BasePermission):
@@ -44,17 +39,18 @@ class PeriodViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Period.objects.select_related("school").all()
-        if not is_admin(self.request.user):
+        if not is_platform_admin(self.request.user):
             school = user_school(self.request.user)
             queryset = queryset.filter(school=school) if school else queryset.none()
-        school_id = self.request.query_params.get("school")
-        if is_admin(self.request.user) and school_id:
-            queryset = queryset.filter(school_id=school_id)
+        else:
+            school_id = self.request.query_params.get("school")
+            if school_id:
+                queryset = queryset.filter(school_id=school_id)
         return queryset
 
     def perform_create(self, serializer):
         school = serializer.validated_data.get("school")
-        if not is_admin(self.request.user):
+        if not is_platform_admin(self.request.user):
             school = user_school(self.request.user)
         if school is None:
             raise ValidationError({"school": "A valid institution is required."})
@@ -64,6 +60,12 @@ class PeriodViewSet(viewsets.ModelViewSet):
         period = serializer.instance
         if period.timetable_entries.filter(timetable__status=TimetableStatus.PUBLISHED).exists():
             raise ValidationError("This period is used by a published timetable and is read-only.")
+        if not is_platform_admin(self.request.user):
+            school = user_school(self.request.user)
+            if school is None or period.school_id != school.id:
+                raise PermissionDenied("The period does not belong to your institution.")
+            serializer.save(school=school)
+            return
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -80,9 +82,11 @@ class TimetableViewSet(viewsets.ModelViewSet):
         queryset = Timetable.objects.select_related("school", "academic_year", "term").annotate(
             entry_count=Count("entries", distinct=True)
         )
-        if not is_admin(self.request.user):
+        if not is_platform_admin(self.request.user):
             school = user_school(self.request.user)
-            queryset = queryset.filter(school=school, status=TimetableStatus.PUBLISHED) if school else queryset.none()
+            queryset = queryset.filter(school=school) if school else queryset.none()
+            if get_user_role(self.request.user) != UserRole.ADMIN:
+                queryset = queryset.filter(status=TimetableStatus.PUBLISHED)
         for param, field in (
             ("school", "school_id"),
             ("academic_year", "academic_year_id"),
@@ -96,12 +100,14 @@ class TimetableViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         school = serializer.validated_data.get("school")
-        if not is_admin(self.request.user):
+        if not is_platform_admin(self.request.user):
             school = user_school(self.request.user)
         if school is None:
             raise ValidationError({"school": "A valid institution is required."})
         academic_year = serializer.validated_data["academic_year"]
         term = serializer.validated_data["term"]
+        if academic_year.school_id != school.id or term.academic_year.school_id != school.id:
+            raise PermissionDenied("Academic data must belong to the selected institution.")
         requested_version = serializer.validated_data.get("version") or 1
         if Timetable.objects.filter(school=school, academic_year=academic_year, term=term, version=requested_version).exists():
             requested_version = (Timetable.objects.filter(school=school, academic_year=academic_year, term=term).order_by("-version").values_list("version", flat=True).first() or 0) + 1
@@ -110,6 +116,12 @@ class TimetableViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         if serializer.instance.status == TimetableStatus.PUBLISHED:
             raise ValidationError("Published timetables are read-only. Create a new version to make changes.")
+        if not is_platform_admin(self.request.user):
+            school = user_school(self.request.user)
+            if school is None or serializer.instance.school_id != school.id:
+                raise PermissionDenied("The timetable does not belong to your institution.")
+            serializer.save(school=school)
+            return
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -187,9 +199,9 @@ class TimetableEntryViewSet(viewsets.ModelViewSet):
         queryset = TimetableEntry.objects.select_related(
             "timetable", "period", "classroom", "teacher_subject__teacher__user", "teacher_subject__subject"
         )
-        if not is_admin(self.request.user):
+        if not is_platform_admin(self.request.user):
             school = user_school(self.request.user)
-            queryset = queryset.filter(timetable__school=school, timetable__status=TimetableStatus.PUBLISHED) if school else queryset.none()
+            queryset = queryset.filter(timetable__school=school, timetable__status=TimetableStatus.PUBLISHED) if school and get_user_role(self.request.user) != UserRole.ADMIN else queryset.filter(timetable__school=school) if school else queryset.none()
         for param, field in (
             ("timetable", "timetable_id"),
             ("classroom", "classroom_id"),
@@ -207,6 +219,11 @@ class TimetableEntryViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         if not is_admin(self.request.user):
             raise PermissionDenied("Only administrators can create timetable entries.")
+        if not is_platform_admin(self.request.user):
+            school = user_school(self.request.user)
+            timetable = serializer.validated_data["timetable"]
+            if school is None or timetable.school_id != school.id:
+                raise PermissionDenied("The timetable does not belong to your institution.")
         serializer.save()
 
     def perform_update(self, serializer):
@@ -214,6 +231,10 @@ class TimetableEntryViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only administrators can update timetable entries.")
         if serializer.instance.timetable.status == TimetableStatus.PUBLISHED:
             raise ValidationError("Published timetables are read-only. Create a new version to make changes.")
+        if not is_platform_admin(self.request.user):
+            school = user_school(self.request.user)
+            if school is None or serializer.instance.timetable.school_id != school.id:
+                raise PermissionDenied("The timetable entry does not belong to your institution.")
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -221,4 +242,8 @@ class TimetableEntryViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only administrators can delete timetable entries.")
         if instance.timetable.status == TimetableStatus.PUBLISHED:
             raise ValidationError("Published timetables are read-only. Create a new version to make changes.")
+        if not is_platform_admin(self.request.user):
+            school = user_school(self.request.user)
+            if school is None or instance.timetable.school_id != school.id:
+                raise PermissionDenied("The timetable entry does not belong to your institution.")
         instance.delete()

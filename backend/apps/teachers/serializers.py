@@ -1,6 +1,7 @@
 from django.db import transaction
 from rest_framework import serializers
 
+from apps.assessments.permissions import get_user_school, is_platform_admin
 from apps.identity.models import User
 
 from .models.department import Department
@@ -17,9 +18,9 @@ class DepartmentSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context.get("request")
         school = attrs.get("school") or getattr(self.instance, "school", None)
-        if request and not (request.user.is_staff or request.user.is_superuser):
-            profile = getattr(request.user, "teacher_profile", None) or getattr(request.user, "student_profile", None)
-            if not profile or profile.school_id != getattr(school, "pk", None):
+        if request and not is_platform_admin(request.user):
+            profile_school = get_user_school(request.user)
+            if profile_school is None or profile_school.pk != getattr(school, "pk", None):
                 raise serializers.ValidationError({"school": "You can only use your own institution."})
         return attrs
 
@@ -53,9 +54,9 @@ class TeacherSerializer(serializers.ModelSerializer):
         department = attrs.get("department") or getattr(self.instance, "department", None)
         employee_number = attrs.get("employee_number")
         account_email = attrs.get("account_email")
-        if school is not None and request is not None and not (request.user.is_staff or request.user.is_superuser):
-            profile = getattr(request.user, "teacher_profile", None) or getattr(request.user, "student_profile", None)
-            if not profile or profile.school_id != school.pk:
+        if school is not None and request is not None and not is_platform_admin(request.user):
+            profile_school = get_user_school(request.user)
+            if profile_school is None or profile_school.pk != school.pk:
                 raise serializers.ValidationError({"school": "You can only use your own institution."})
         if department and school and department.school_id != school.pk:
             raise serializers.ValidationError({"department": "Department must belong to the selected institution."})

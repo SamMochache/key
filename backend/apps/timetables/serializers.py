@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.academics.models import AcademicYear, Classroom, Term
+from apps.assessments.permissions import get_user_school, is_platform_admin
 from apps.schools.models import School
 from apps.teachers.models import TeacherSubject
 
@@ -21,6 +22,12 @@ class PeriodSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "school_name", "created_at", "updated_at")
 
     def validate(self, attrs):
+        request = self.context.get("request")
+        school = attrs.get("school", getattr(self.instance, "school", None))
+        if request and not is_platform_admin(request.user):
+            user_school = get_user_school(request.user)
+            if user_school is None or school is None or school.id != user_school.id:
+                raise serializers.ValidationError({"school": "You can only use your own institution."})
         if attrs.get("start_time") and attrs.get("end_time") and attrs["start_time"] >= attrs["end_time"]:
             raise serializers.ValidationError({"end_time": "End time must be after start time."})
         return attrs
@@ -45,6 +52,11 @@ class TimetableSerializer(serializers.ModelSerializer):
         academic_year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
         term = attrs.get("term", getattr(self.instance, "term", None))
         school = attrs.get("school", getattr(self.instance, "school", None))
+        request = self.context.get("request")
+        if request and not is_platform_admin(request.user):
+            user_school = get_user_school(request.user)
+            if user_school is None or school is None or school.id != user_school.id:
+                raise serializers.ValidationError({"school": "You can only use your own institution."})
         if academic_year and term and term.academic_year_id != academic_year.id:
             raise serializers.ValidationError({"term": "Term must belong to the selected academic year."})
         if academic_year and school and academic_year.school_id != school.id:
@@ -86,6 +98,11 @@ class TimetableEntrySerializer(serializers.ModelSerializer):
         period = attrs.get("period", getattr(self.instance, "period", None))
         classroom = attrs.get("classroom", getattr(self.instance, "classroom", None))
         assignment = attrs.get("teacher_subject", getattr(self.instance, "teacher_subject", None))
+        request = self.context.get("request")
+        if request and not is_platform_admin(request.user):
+            user_school = get_user_school(request.user)
+            if user_school is None or timetable is None or timetable.school_id != user_school.id:
+                raise serializers.ValidationError({"timetable": "The timetable must belong to your institution."})
         if not timetable or not period or not classroom or not assignment:
             return attrs
         if timetable.status == "PUBLISHED":

@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "buildCommand": "python3.12 manage.py migrate",
+  "buildCommand": "python3.12 manage.py migrate && python3.12 manage.py collectstatic --noinput",
   "builds": [
     {
       "src": "config/wsgi.py",

@@ -128,31 +128,31 @@ class StageSubjectSerializer(serializers.ModelSerializer):
 
 class ClassroomSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source="school.name", read_only=True)
+    student_count = serializers.IntegerField(read_only=True)
+    subject_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Classroom
         fields = [
-            "id",
-            "school",
-            "school_name",
-            "academic_year",
-            "term",
-            "cambridge_stage",
-            "montessori_level",
-            "name",
-            "code",
-            "capacity",
-            "is_active",
-            "student_count",
-            "subject_count",
-            "created_at",
-            "updated_at",
+            "id", "school", "school_name", "academic_year", "term", "cambridge_stage",
+            "montessori_level", "name", "code", "capacity", "is_active", "student_count",
+            "subject_count", "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id",
-            "school_name",
-            "student_count",
-            "subject_count",
-            "created_at",
-            "updated_at",
+            "id", "school_name", "student_count", "subject_count", "created_at", "updated_at",
         ]
+
+    def validate(self, attrs):
+        school = attrs.get("school", getattr(self.instance, "school", None))
+        academic_year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
+        term = attrs.get("term", getattr(self.instance, "term", None))
+        user_school = _request_user_school(self)
+        if not _is_platform_admin(self) and user_school is not None and school is not None and school.id != user_school.id:
+            raise serializers.ValidationError({"school": "Classrooms must belong to your institution."})
+        if academic_year is not None and school is not None and academic_year.school_id != school.id:
+            raise serializers.ValidationError({"academic_year": "Academic year must belong to the selected institution."})
+        if term is not None and academic_year is not None and term.academic_year_id != academic_year.id:
+            raise serializers.ValidationError({"term": "Term must belong to the selected academic year."})
+        if attrs.get("capacity", getattr(self.instance, "capacity", 30)) <= 0:
+            raise serializers.ValidationError({"capacity": "Capacity must be greater than zero."})
+        return attrs

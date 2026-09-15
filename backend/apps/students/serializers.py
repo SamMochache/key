@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.assessments.permissions import get_user_school
+from apps.assessments.permissions import get_user_school, is_platform_admin
 from apps.identity.models import User
 
 from .models import Student
@@ -53,10 +53,8 @@ class StudentSerializer(serializers.ModelSerializer):
         if school is not None and request is not None:
             user = request.user
             user_school = get_user_school(user)
-            if user_school is not None and user_school.pk != school.pk:
+            if not is_platform_admin(user) and (user_school is None or user_school.pk != school.pk):
                 raise serializers.ValidationError({"school": "You can only use your own institution."})
-            if user_school is None and not (user.is_staff or user.is_superuser):
-                raise serializers.ValidationError({"school": "Your account has no institution context."})
 
         if admission_number and school:
             qs = Student.objects.filter(school=school, admission_number=admission_number)
@@ -68,8 +66,6 @@ class StudentSerializer(serializers.ModelSerializer):
                 )
 
         if self.instance is None:
-            # Fields using source="user.*" arrive here nested under attrs["user"].
-            # The API field is called account_email, while the nested User key is email.
             missing = []
             if not user_data.get("first_name"):
                 missing.append("first_name")
