@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import type { MouseEvent } from 'react';
 import { StudentProfile as LegacyStudentProfile } from './StudentProfileLegacy';
 
 const TAB_NAMES = new Set([
@@ -25,7 +26,7 @@ export function StudentProfile() {
     if (button) button.click();
   }, [location.search]);
 
-  const handleTabClick = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleTabClick = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null;
     const button = target?.closest('button');
     const label = button?.textContent?.trim() || '';
