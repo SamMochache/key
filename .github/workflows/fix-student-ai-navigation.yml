@@ -1,0 +1,73 @@
+name: Apply student AI report navigation fix
+
+on:
+  push:
+    branches:
+      - fix/student-ai-report-navigation
+
+permissions:
+  contents: write
+
+jobs:
+  fix-navigation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+
+      - name: Apply URL-backed student tabs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/src/pages/StudentProfile.tsx')
+          text = path.read_text()
+
+          old = "import { useParams, Link } from 'react-router-dom';"
+          new = "import { Link, useParams, useSearchParams } from 'react-router-dom';"
+          if old not in text:
+              raise SystemExit('Expected react-router-dom import was not found')
+          text = text.replace(old, new, 1)
+
+          old = "  const [tab, setTab] = useState('Overview');"
+          new = '''  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const tab = TABS.find((item) => item.toLowerCase().replace(/\\s+/g, '-') === tabParam) || 'Overview';
+
+  const setTab = (nextTab: string) => {
+    if (!TABS.includes(nextTab)) return;
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextTab === 'Overview') {
+      nextParams.delete('tab');
+    } else {
+      nextParams.set('tab', nextTab.toLowerCase().replace(/\\s+/g, '-'));
+    }
+    setSearchParams(nextParams);
+  };'''
+          if old not in text:
+              raise SystemExit('Expected local tab state was not found')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Verify navigation fix
+        shell: bash
+        run: |
+          grep -q "useSearchParams" frontend/src/pages/StudentProfile.tsx
+          grep -q "searchParams.get('tab')" frontend/src/pages/StudentProfile.tsx
+          grep -q "nextParams.set('tab'" frontend/src/pages/StudentProfile.tsx
+
+      - name: Commit and push fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/pages/StudentProfile.tsx
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "fix(frontend): persist student profile tabs in URL"
+          git push origin HEAD:fix/student-ai-report-navigation
