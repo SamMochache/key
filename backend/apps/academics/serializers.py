@@ -128,6 +128,8 @@ class StageSubjectSerializer(serializers.ModelSerializer):
 
 class ClassroomSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source="school.name", read_only=True)
+    student_count = serializers.IntegerField(read_only=True)
+    subject_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Classroom
@@ -156,3 +158,52 @@ class ClassroomSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def validate(self, attrs):
+        school = attrs.get("school", getattr(self.instance, "school", None))
+        academic_year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
+        term = attrs.get("term", getattr(self.instance, "term", None))
+        user_school = _request_user_school(self)
+
+        if not _is_platform_admin(self) and user_school is not None and school is not None and school.id != user_school.id:
+            raise serializers.ValidationError({"school": "Classrooms must belong to your institution."})
+        if academic_year is not None and school is not None and academic_year.school_id != school.id:
+            raise serializers.ValidationError({"academic_year": "Academic year must belong to the selected institution."})
+        if term is not None and academic_year is not None and term.academic_year_id != academic_year.id:
+            raise serializers.ValidationError({"term": "Term must belong to the selected academic year."})
+        if attrs.get("capacity", getattr(self.instance, "capacity", 30)) <= 0:
+            raise serializers.ValidationError({"capacity": "Capacity must be greater than zero."})
+        return attrs
+
+
+class ClassroomTeacherAssignmentSerializer(serializers.ModelSerializer):
+    teacher_name = serializers.SerializerMethodField()
+    classroom_name = serializers.CharField(source="classroom.name", read_only=True)
+
+    class Meta:
+        model = ClassroomTeacherAssignment
+        fields = [
+            "id",
+            "classroom",
+            "classroom_name",
+            "teacher",
+            "teacher_name",
+            "role",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "classroom_name", "teacher_name", "created_at", "updated_at"]
+
+    def get_teacher_name(self, obj):
+        return obj.teacher.user.get_full_name() or obj.teacher.user.email
+
+    def validate(self, attrs):
+        classroom = attrs.get("classroom", getattr(self.instance, "classroom", None))
+        teacher = attrs.get("teacher", getattr(self.instance, "teacher", None))
+        user_school = _request_user_school(self)
+        if not _is_platform_admin(self) and user_school is not None and classroom is not None and classroom.school_id != user_school.id:
+            raise serializers.ValidationError({"classroom": "Classroom must belong to your institution."})
+        if classroom is not None and teacher is not None and teacher.school_id != classroom.school_id:
+            raise serializers.ValidationError({"teacher": "Teacher must belong to the classroom institution."})
+        return attrs
