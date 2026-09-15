@@ -29,5 +29,8 @@ export const navGroups: NavGroup[] = [
     { label: 'Communication', to: '/communication', icon: 'MessagesSquare', roles: COMMUNITY },
     { label: 'Analytics', to: '/analytics', icon: 'TrendingUp', roles: ['admin', 'teacher'] },
     { label: 'Reports', to: '/reports', icon: 'FileBarChart', roles: ['admin', 'teacher'] }
+  ] },
+  { title: 'Platform', items: [
+    { label: 'Platform Dashboard', to: '/platform/dashboard', icon: 'ShieldCheck', roles: ['platform_admin'] }
   ] }
 ];
