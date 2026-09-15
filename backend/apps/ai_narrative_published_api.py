@@ -36,7 +36,7 @@ def _report_payload(report):
     return {
         "id": str(report.id),
         "student": str(report.student_id),
-        "student_name": report.student.user.get_full_name() or report.student.admission_number,
+        "student_name": report.student.user.full_name or report.student.admission_number,
         "academic_year": str(report.academic_year_id),
         "academic_year_name": report.academic_year.name,
         "term": str(report.term_id),
@@ -227,6 +227,6 @@ class PublishedAINarrativeReportPdfView(views.APIView):
         document.build(story, onFirstPage=footer, onLaterPages=footer)
         buffer.seek(0)
         response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
-        safe_name = report.student.user.get_full_name().strip().replace(" ", "-") or report.student.admission_number
+        safe_name = (report.student.user.full_name or "").strip().replace(" ", "-") or report.student.admission_number
         response["Content-Disposition"] = f'attachment; filename="KEY-AI-Report-{safe_name}-Term-{report.term.term_number}.pdf"'
         return response
