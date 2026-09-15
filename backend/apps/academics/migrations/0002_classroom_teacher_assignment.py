@@ -4,30 +4,67 @@ import django.db.models.deletion
 from django.db import migrations, models
 
 
-def ensure_classroom_teacher_assignment_table(apps, schema_editor):
-    """Create the table on fresh databases and preserve it on existing ones.
+CREATE_CLASSROOM_TEACHER_ASSIGNMENT_SQL = """
+CREATE TABLE IF NOT EXISTS "classroom_teacher_assignments" (
+    "id" uuid NOT NULL PRIMARY KEY,
+    "created_at" timestamp with time zone NOT NULL,
+    "updated_at" timestamp with time zone NOT NULL,
+    "deleted_at" timestamp with time zone NULL,
+    "is_deleted" boolean NOT NULL,
+    "role" varchar(20) NOT NULL,
+    "is_active" boolean NOT NULL,
+    "classroom_id" uuid NOT NULL,
+    "teacher_id" uuid NOT NULL
+);
 
-    Some environments already contain this table while Django's migration
-    history still reports 0002 as unapplied. Creating it again raises
-    DuplicateTable and prevents all subsequent migrations from running.
-    """
-    model = apps.get_model("academics", "ClassroomTeacherAssignment")
-    connection = schema_editor.connection
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'unique_classroom_teacher_role'
+          AND conrelid = 'classroom_teacher_assignments'::regclass
+    ) THEN
+        ALTER TABLE "classroom_teacher_assignments"
+        ADD CONSTRAINT "unique_classroom_teacher_role"
+        UNIQUE ("classroom_id", "teacher_id", "role");
+    END IF;
 
-    existing_tables = set(connection.introspection.table_names())
-    table_name = model._meta.db_table
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'classroom_teacher_as_classroom_id_a3425bac_fk_classroom'
+          AND conrelid = 'classroom_teacher_assignments'::regclass
+    ) THEN
+        ALTER TABLE "classroom_teacher_assignments"
+        ADD CONSTRAINT "classroom_teacher_as_classroom_id_a3425bac_fk_classroom"
+        FOREIGN KEY ("classroom_id") REFERENCES "classrooms" ("id")
+        DEFERRABLE INITIALLY DEFERRED;
+    END IF;
 
-    if table_name not in existing_tables:
-        schema_editor.create_model(model)
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'classroom_teacher_as_teacher_id_9b90c59c_fk_teachers_'
+          AND conrelid = 'classroom_teacher_assignments'::regclass
+    ) THEN
+        ALTER TABLE "classroom_teacher_assignments"
+        ADD CONSTRAINT "classroom_teacher_as_teacher_id_9b90c59c_fk_teachers_"
+        FOREIGN KEY ("teacher_id") REFERENCES "teachers" ("id")
+        DEFERRABLE INITIALLY DEFERRED;
+    END IF;
+END $$;
 
+CREATE INDEX IF NOT EXISTS "classroom_teacher_assignments_classroom_id_a3425bac"
+ON "classroom_teacher_assignments" ("classroom_id");
 
-def reverse_classroom_teacher_assignment_table(apps, schema_editor):
-    model = apps.get_model("academics", "ClassroomTeacherAssignment")
-    table_name = model._meta.db_table
-    existing_tables = set(schema_editor.connection.introspection.table_names())
+CREATE INDEX IF NOT EXISTS "classroom_teacher_assignments_teacher_id_9b90c59c"
+ON "classroom_teacher_assignments" ("teacher_id");
+"""
 
-    if table_name in existing_tables:
-        schema_editor.delete_model(model)
+DROP_CLASSROOM_TEACHER_ASSIGNMENT_SQL = """
+DROP TABLE IF EXISTS "classroom_teacher_assignments" CASCADE;
+"""
 
 
 class Migration(migrations.Migration):
@@ -40,9 +77,9 @@ class Migration(migrations.Migration):
     operations = [
         migrations.SeparateDatabaseAndState(
             database_operations=[
-                migrations.RunPython(
-                    ensure_classroom_teacher_assignment_table,
-                    reverse_classroom_teacher_assignment_table,
+                migrations.RunSQL(
+                    CREATE_CLASSROOM_TEACHER_ASSIGNMENT_SQL,
+                    DROP_CLASSROOM_TEACHER_ASSIGNMENT_SQL,
                 ),
             ],
             state_operations=[
