@@ -1,13 +1,11 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
-from django.conf import settings
 
-from apps.assessments.models import Assessment, AssessmentEvaluation, AssessmentSubmission
-from apps.attendance.models import AttendanceRecord
 from apps.academics.models import (
     AcademicYear,
     CalendarEvent,
@@ -21,6 +19,8 @@ from apps.academics.models import (
     Subject,
     Term,
 )
+from apps.assessments.models import Assessment, AssessmentEvaluation, AssessmentSubmission
+from apps.attendance.models import AttendanceRecord, AttendanceRegister
 from apps.communication.models import CommunicationMessage
 from apps.enrollment.models import Enrollment
 from apps.identity.models import User
@@ -46,9 +46,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         if not settings.DEBUG:
-            raise CommandError(
-                "seed_demo is development-only. Run it with DEBUG=True."
-            )
+            raise CommandError("seed_demo is development-only. Run it with DEBUG=True.")
 
         with transaction.atomic():
             if options["reset"]:
@@ -60,30 +58,57 @@ class Command(BaseCommand):
             self.stdout.write(f"{label}: {value}")
 
     def reset_demo(self):
-        """Delete only records belonging to this demo dataset."""
-        demo_school_names = ["KEY", "GVA"]
-        demo_emails = [
-            "systemadmin@key.test",
-            "admin@keyinternational.test",
-            "admin@greenvalley.test",
-        ]
+        """Delete only the school-scoped records created by this demo seed."""
+        school_codes = ["KEY", "GVA"]
+        schools = School.objects.filter(short_name__in=school_codes)
+        school_users = User.objects.filter(
+            email__in=[
+                "systemadmin@key.test",
+                "admin@keyinternational.test",
+                "admin@greenvalley.test",
+            ]
+        ) | User.objects.filter(email__endswith="@keyinternational.test") | User.objects.filter(
+            email__endswith="@greenvalley.test"
+        ) | User.objects.filter(email__endswith="@student.keyinternational.test") | User.objects.filter(
+            email__endswith="@student.greenvalley.test"
+        )
 
-        schools = School.objects.filter(short_name__in=demo_school_names)
-        school_users = User.objects.filter(email__endswith=".test")
+        assessments = Assessment.objects.filter(teacher__school__in=schools)
+        submissions = AssessmentSubmission.objects.filter(assessment__in=assessments)
+        AssessmentEvaluation.objects.filter(submission__in=submissions).delete()
+        submissions.delete()
+        assessments.delete()
+
+        lesson_sessions = LessonSession.objects.filter(timetable_entry__timetable__school__in=schools)
+        attendance_registers = AttendanceRegister.objects.filter(lesson_session__in=lesson_sessions)
+        AttendanceRecord.objects.filter(attendance_register__in=attendance_registers).delete()
+        attendance_registers.delete()
+
+        PortfolioItem.objects.filter(portfolio__student__school__in=schools).delete()
+        Portfolio.objects.filter(student__school__in=schools).delete()
 
         CommunicationMessage.objects.filter(school__in=schools).delete()
         Notification.objects.filter(school__in=schools).delete()
-        SchoolAdministrator.objects.filter(school__in=schools).delete()
-        Teacher.objects.filter(school__in=schools).delete()
-        Student.objects.filter(school__in=schools).delete()
-        Parent.objects.filter(user__in=school_users).delete()
-        schools.delete()
 
-        User.objects.filter(email__in=demo_emails).delete()
-        User.objects.filter(email__endswith="@keyinternational.test").delete()
-        User.objects.filter(email__endswith="@greenvalley.test").delete()
-        User.objects.filter(email__endswith="@student.keyinternational.test").delete()
-        User.objects.filter(email__endswith="@student.greenvalley.test").delete()
+        lesson_sessions.delete()
+        TimetableEntry.objects.filter(timetable__school__in=schools).delete()
+        Timetable.objects.filter(school__in=schools).delete()
+        TeacherSubject.objects.filter(teacher__school__in=schools).delete()
+        ClassroomTeacherAssignment.objects.filter(classroom__school__in=schools).delete()
+        Enrollment.objects.filter(student__school__in=schools).delete()
+        ParentStudentRelationship.objects.filter(parent__school__in=schools).delete()
+        Parent.objects.filter(school__in=schools).delete()
+        Student.objects.filter(school__in=schools).delete()
+        Teacher.objects.filter(school__in=schools).delete()
+        Period.objects.filter(school__in=schools).delete()
+        CalendarEvent.objects.filter(school__in=schools).delete()
+        Classroom.objects.filter(school__in=schools).delete()
+        Term.objects.filter(academic_year__school__in=schools).delete()
+        AcademicYear.objects.filter(school__in=schools).delete()
+        SchoolAdministrator.objects.filter(school__in=schools).delete()
+        Department.objects.filter(school__in=schools).delete()
+        schools.delete()
+        school_users.delete()
 
     def user(self, email, first_name, last_name, password="TestPass123!", **extra):
         user, created = User.objects.get_or_create(
@@ -181,20 +206,26 @@ class Command(BaseCommand):
                 defaults={"name": "Secondary"},
             )
 
-        curriculum, _ = Curriculum.objects.get_or_create(
+        cambridge_curriculum, _ = Curriculum.objects.get_or_create(
             name="Cambridge International",
-            defaults={"description": "Cambridge international curriculum demo."},
+            defaults={"description": "Cambridge international curriculum demo.", "is_active": True},
         )
         montessori_curriculum, _ = Curriculum.objects.get_or_create(
             name="Montessori",
-            defaults={"description": "Montessori curriculum demo."},
+            defaults={"description": "Montessori curriculum demo.", "is_active": True},
         )
 
+        programme_specs = [
+            ("Cambridge Primary", 1),
+            ("Cambridge Lower Secondary", 2),
+            ("Cambridge Upper Secondary", 3),
+        ]
         programmes = {}
-        for name in ["Cambridge Primary", "Cambridge Lower Secondary", "Cambridge Upper Secondary"]:
-            programmes[name], _ = Programme.objects.get_or_create(
+        for name, display_order in programme_specs:
+            programmes[name], _ = Programme.objects.update_or_create(
+                curriculum=cambridge_curriculum,
                 name=name,
-                defaults={"curriculum": curriculum},
+                defaults={"display_order": display_order, "is_active": True},
             )
 
         stages = {}
@@ -215,28 +246,74 @@ class Command(BaseCommand):
                 },
             )
 
+        montessori_specs = [
+            ("Casa", "CASA", Decimal("3.0"), Decimal("6.0"), 1),
+            ("Lower Elementary", "LOWER-ELEMENTARY", Decimal("6.0"), Decimal("9.0"), 2),
+        ]
         montessori = {}
-        for name in ["Casa", "Lower Elementary"]:
-            montessori[name], _ = MontessoriLevel.objects.get_or_create(
+        for name, code, minimum_age, maximum_age, display_order in montessori_specs:
+            montessori[name], _ = MontessoriLevel.objects.update_or_create(
                 name=name,
-                defaults={"curriculum": montessori_curriculum},
+                defaults={
+                    "code": code,
+                    "minimum_age": minimum_age,
+                    "maximum_age": maximum_age,
+                    "description": f"Demo Montessori level: {name}.",
+                    "display_order": display_order,
+                    "is_active": True,
+                },
             )
 
-        subject_names = [
-            "English", "Mathematics", "Science", "Global Perspectives", "Computing",
-            "Art & Design", "Physical Education", "Biology", "Physics", "Chemistry",
-            "Computer Science", "Geography", "History",
+        subject_specs = [
+            ("English", "ENG"),
+            ("Mathematics", "MATH"),
+            ("Science", "SCI"),
+            ("Global Perspectives", "GP"),
+            ("Computing", "COMP"),
+            ("Art & Design", "ART"),
+            ("Physical Education", "PE"),
+            ("Biology", "BIO"),
+            ("Physics", "PHY"),
+            ("Chemistry", "CHEM"),
+            ("Computer Science", "CS"),
+            ("Geography", "GEO"),
+            ("History", "HIST"),
         ]
         subjects = {}
-        for name in subject_names:
-            subjects[name], _ = Subject.objects.get_or_create(name=name)
+        for display_order, (name, code) in enumerate(subject_specs, start=1):
+            subjects[name], _ = Subject.objects.update_or_create(
+                curriculum=cambridge_curriculum,
+                name=name,
+                defaults={
+                    "code": code,
+                    "description": f"Demo {name} subject.",
+                    "is_core": name in {"English", "Mathematics", "Science"},
+                    "display_order": display_order,
+                    "is_active": True,
+                },
+            )
 
+        stage_subject_names = [
+            "English",
+            "Mathematics",
+            "Science",
+            "Global Perspectives",
+            "Computing",
+            "Art & Design",
+            "Physical Education",
+        ]
         for stage in stages.values():
-            for subject_name in [
-                "English", "Mathematics", "Science", "Global Perspectives",
-                "Computing", "Art & Design", "Physical Education",
-            ]:
-                StageSubject.objects.get_or_create(stage=stage, subject=subjects[subject_name])
+            for display_order, subject_name in enumerate(stage_subject_names, start=1):
+                StageSubject.objects.update_or_create(
+                    cambridge_stage=stage,
+                    subject=subjects[subject_name],
+                    defaults={
+                        "weekly_lessons": 5 if subject_name in {"English", "Mathematics", "Science"} else 2,
+                        "is_core": subject_name in {"English", "Mathematics", "Science"},
+                        "display_order": display_order,
+                        "is_active": True,
+                    },
+                )
 
         academic_years = {}
         terms = {}
@@ -246,8 +323,10 @@ class Command(BaseCommand):
                 school=school,
                 name="2026 Academic Year",
                 defaults={
-                    "start_date": date(2026, 1, 5), "end_date": date(2026, 12, 4),
-                    "is_current": True, "is_active": True,
+                    "start_date": date(2026, 1, 5),
+                    "end_date": date(2026, 12, 4),
+                    "is_current": True,
+                    "is_active": True,
                 },
             )
             for number, start, end in [
@@ -256,58 +335,82 @@ class Command(BaseCommand):
                 (3, date(2026, 8, 31), date(2026, 12, 4)),
             ]:
                 terms[(code, number)], _ = Term.objects.update_or_create(
-                    academic_year=academic_years[code], name=f"Term {number}",
+                    academic_year=academic_years[code],
+                    name=f"Term {number}",
                     defaults={"start_date": start, "end_date": end},
                 )
             for stage_name in ["Year 4", "Year 5", "Year 7"]:
-                classrooms[(code, stage_name)], _ = Classroom.objects.get_or_create(
-                    school=school, academic_year=academic_years[code], name=stage_name,
+                classrooms[(code, stage_name)], _ = Classroom.objects.update_or_create(
+                    school=school,
+                    academic_year=academic_years[code],
+                    name=stage_name,
                     defaults={
+                        "term": terms[(code, 1)],
                         "cambridge_stage": stages[stage_name],
                         "montessori_level": None,
-                        "term": terms[(code, 1)],
+                        "code": f"{code}-{stage_name.replace(' ', '')}-2026",
+                        "capacity": 30,
+                        "is_active": True,
                     },
                 )
 
         teacher_specs = [
-            ("KEY", "james.otieno@keyinternational.test", "James", "Otieno", "T001", "PRI", "Mathematics"),
-            ("KEY", "mary.wanjiku@keyinternational.test", "Mary", "Wanjiku", "T002", "PRI", "English"),
-            ("KEY", "daniel.kiptoo@keyinternational.test", "Daniel", "Kiptoo", "T003", "SEC", "Science"),
-            ("GVA", "peter.maina@greenvalley.test", "Peter", "Maina", "T001", "PRI", "Mathematics"),
-            ("GVA", "grace.njeri@greenvalley.test", "Grace", "Njeri", "T002", "PRI", "English"),
-            ("GVA", "samuel.kariuki@greenvalley.test", "Samuel", "Kariuki", "T003", "SEC", "Science"),
+            ("KEY", "james.otieno@keyinternational.test", "James", "Otieno", "T001", "PRI", "Mathematics", "Year 4"),
+            ("KEY", "mary.wanjiku@keyinternational.test", "Mary", "Wanjiku", "T002", "PRI", "English", "Year 4"),
+            ("KEY", "daniel.kiptoo@keyinternational.test", "Daniel", "Kiptoo", "T003", "SEC", "Science", "Year 7"),
+            ("GVA", "peter.maina@greenvalley.test", "Peter", "Maina", "T001", "PRI", "Mathematics", "Year 4"),
+            ("GVA", "grace.njeri@greenvalley.test", "Grace", "Njeri", "T002", "PRI", "English", "Year 4"),
+            ("GVA", "samuel.kariuki@greenvalley.test", "Samuel", "Kariuki", "T003", "SEC", "Science", "Year 7"),
         ]
-        teachers = []
         teachers_by_school = {"KEY": [], "GVA": []}
         teacher_subjects = []
-        for code, email, first, last, employee, dept, subject_name in teacher_specs:
+        teacher_subject_by_key = {}
+        for code, email, first, last, employee, dept, subject_name, classroom_name in teacher_specs:
             user = self.user(email, first, last)
             teacher, _ = Teacher.objects.update_or_create(
                 user=user,
                 defaults={
-                    "school": schools[code], "employee_number": employee,
-                    "employment_type": "FULL_TIME", "employment_date": date(2024, 1, 8),
-                    "status": "ACTIVE", "department": departments[(code, dept)],
+                    "school": schools[code],
+                    "employee_number": employee,
+                    "employment_type": "FULL_TIME",
+                    "employment_date": date(2024, 1, 8),
+                    "status": "ACTIVE",
+                    "department": departments[(code, dept)],
                 },
             )
-            teachers.append(teacher)
             teachers_by_school[code].append(teacher)
-            teacher_subjects.append(
-                TeacherSubject.objects.get_or_create(
-                    teacher=teacher, subject=subjects[subject_name], defaults={"is_active": True}
-                )[0]
+            teacher_subject, _ = TeacherSubject.objects.update_or_create(
+                teacher=teacher,
+                subject=subjects[subject_name],
+                classroom=classrooms[(code, classroom_name)],
+                academic_year=academic_years[code],
+                term=terms[(code, 1)],
+                defaults={
+                    "role": "LEAD",
+                    "start_date": date(2026, 1, 5),
+                    "end_date": date(2026, 12, 4),
+                    "is_active": True,
+                },
             )
+            teacher_subjects.append(teacher_subject)
+            teacher_subject_by_key[(code, classroom_name, subject_name)] = teacher_subject
 
         assignment_specs = [
-            ("KEY", "Year 4", 0, "PRIMARY"), ("KEY", "Year 4", 1, "ASSISTANT"),
-            ("KEY", "Year 5", 2, "PRIMARY"), ("GVA", "Year 4", 3, "PRIMARY"),
-            ("GVA", "Year 4", 4, "ASSISTANT"), ("GVA", "Year 5", 5, "PRIMARY"),
+            ("KEY", "Year 4", 0, "PRIMARY"),
+            ("KEY", "Year 4", 1, "ASSISTANT"),
+            ("KEY", "Year 5", 0, "PRIMARY"),
+            ("KEY", "Year 7", 2, "PRIMARY"),
+            ("GVA", "Year 4", 0, "PRIMARY"),
+            ("GVA", "Year 4", 1, "ASSISTANT"),
+            ("GVA", "Year 5", 0, "PRIMARY"),
+            ("GVA", "Year 7", 2, "PRIMARY"),
         ]
         for code, classroom_name, teacher_index, role in assignment_specs:
-            ClassroomTeacherAssignment.objects.get_or_create(
+            ClassroomTeacherAssignment.objects.update_or_create(
                 classroom=classrooms[(code, classroom_name)],
-                teacher=teachers_by_school[code][teacher_index % len(teachers_by_school[code])],
-                role=role, defaults={"is_active": True},
+                teacher=teachers_by_school[code][teacher_index],
+                role=role,
+                defaults={"is_active": True},
             )
 
         student_specs = [
@@ -320,95 +423,152 @@ class Command(BaseCommand):
         ]
         students = {}
         enrollments = {}
-        for code, email, first, last, admission, dob, gender, stage_name in student_specs:
+        for code, email, first, last, admission, dob, gender, classroom_name in student_specs:
             user = self.user(email, first, last)
             student, _ = Student.objects.update_or_create(
                 user=user,
                 defaults={
-                    "school": schools[code], "admission_number": admission,
-                    "admission_date": date(2025, 1, 6), "date_of_birth": dob,
-                    "gender": gender, "nationality": "Kenyan",
+                    "school": schools[code],
+                    "admission_number": admission,
+                    "admission_date": date(2025, 1, 6),
+                    "date_of_birth": dob,
+                    "gender": gender,
+                    "nationality": "Kenyan",
+                    "is_active": True,
                 },
             )
             students[admission] = student
-            enrollment, _ = Enrollment.objects.get_or_create(
-                student=student, classroom=classrooms[(code, stage_name)],
-                defaults={"status": "ACTIVE", "enrollment_date": date(2026, 1, 5)},
+            classroom = classrooms[(code, classroom_name)]
+            enrollment, _ = Enrollment.objects.update_or_create(
+                student=student,
+                academic_year=academic_years[code],
+                term=terms[(code, 1)],
+                defaults={
+                    "classroom": classroom,
+                    "status": "ENROLLED",
+                    "enrollment_date": date(2026, 1, 5),
+                    "remarks": "Seeded demo enrollment.",
+                },
             )
             enrollments[admission] = enrollment
 
         parent_specs = [
-            ("KEY", "parent.onyango@keyinternational.test", "Patrick", "Onyango", "KEY-P001", ["KEY001"]),
-            ("KEY", "parent.wambui@keyinternational.test", "Jane", "Wambui", "KEY-P002", ["KEY002"]),
-            ("GVA", "parent.njeri@greenvalley.test", "David", "Njeri", "GVA-P001", ["GVA001"]),
-            ("GVA", "parent.kiprotich@greenvalley.test", "Susan", "Kiprotich", "GVA-P002", ["GVA002", "GVA003"]),
+            ("KEY", "parent.onyango@keyinternational.test", "Patrick", "Onyango", ["KEY001"]),
+            ("KEY", "parent.wambui@keyinternational.test", "Jane", "Wambui", ["KEY002"]),
+            ("GVA", "parent.njeri@greenvalley.test", "David", "Njeri", ["GVA001"]),
+            ("GVA", "parent.kiprotich@greenvalley.test", "Susan", "Kiprotich", ["GVA002", "GVA003"]),
         ]
         parents = []
-        for code, email, first, last, phone, admission_numbers in parent_specs:
+        for code, email, first, last, admission_numbers in parent_specs:
             user = self.user(email, first, last)
             parent, _ = Parent.objects.update_or_create(
-                user=user, defaults={"school": schools[code], "phone_number": phone}
+                user=user,
+                defaults={"school": schools[code], "is_active": True},
             )
             parents.append(parent)
             for admission in admission_numbers:
-                ParentStudentRelationship.objects.get_or_create(
-                    parent=parent, student=students[admission],
-                    defaults={"relationship": "PARENT", "is_primary": True},
+                ParentStudentRelationship.objects.update_or_create(
+                    parent=parent,
+                    student=students[admission],
+                    defaults={
+                        "relationship": "PARENT",
+                        "can_view_reports": True,
+                        "is_primary_contact": True,
+                        "is_active": True,
+                    },
                 )
 
         periods = {}
         timetables = {}
         entries = []
         sessions = []
+        timetable_specs = [
+            ("MONDAY", "Year 4", "Mathematics", 1),
+            ("TUESDAY", "Year 5", "English", 1),
+            ("WEDNESDAY", "Year 7", "Science", 1),
+        ]
         for code, school in schools.items():
             for number, start, end in [
-                (1, "08:00:00", "08:45:00"), (2, "08:50:00", "09:35:00"),
-                (3, "09:45:00", "10:30:00"),
+                (1, time(8, 0), time(8, 45)),
+                (2, time(8, 50), time(9, 35)),
+                (3, time(9, 45), time(10, 30)),
             ]:
-                periods[(code, number)], _ = Period.objects.get_or_create(
-                    school=school, name=f"Period {number}",
-                    defaults={"start_time": start, "end_time": end, "order": number},
+                periods[(code, number)], _ = Period.objects.update_or_create(
+                    school=school,
+                    name=f"Period {number}",
+                    defaults={
+                        "sequence": number,
+                        "start_time": start,
+                        "end_time": end,
+                        "is_break": False,
+                    },
                 )
-            timetable, _ = Timetable.objects.get_or_create(
-                school=school, academic_year=academic_years[code], term=terms[(code, 1)],
-                name="Term 1 Timetable", defaults={"is_active": True},
+
+            timetable, _ = Timetable.objects.update_or_create(
+                school=school,
+                academic_year=academic_years[code],
+                term=terms[(code, 1)],
+                name="Term 1 Timetable",
+                defaults={
+                    "version": 1,
+                    "status": "PUBLISHED",
+                    "effective_from": date(2026, 1, 5),
+                    "effective_to": date(2026, 4, 2),
+                },
             )
             timetables[code] = timetable
-            for day, classroom_name, period_number, teacher_subject in [
-                ("MONDAY", "Year 4", 1, 0), ("TUESDAY", "Year 5", 1, 1),
-                ("WEDNESDAY", "Year 7", 1, 2),
-            ]:
-                school_teacher_subjects = [
-                    ts for ts in teacher_subjects if ts.teacher.school_id == school.id
-                ]
-                ts = school_teacher_subjects[teacher_subject % len(school_teacher_subjects)]
-                entry, _ = TimetableEntry.objects.get_or_create(
-                    timetable=timetable, classroom=classrooms[(code, classroom_name)],
-                    teacher_subject=ts, day_of_week=day, period=periods[(code, period_number)],
-                    defaults={"is_active": True},
+
+            for day, classroom_name, subject_name, period_number in timetable_specs:
+                teacher_subject = teacher_subject_by_key[(code, classroom_name, subject_name)]
+                entry, _ = TimetableEntry.objects.update_or_create(
+                    timetable=timetable,
+                    weekday=day,
+                    period=periods[(code, period_number)],
+                    classroom=classrooms[(code, classroom_name)],
+                    defaults={
+                        "teacher_subject": teacher_subject,
+                        "room": "Room 1",
+                    },
                 )
                 entries.append(entry)
-                session, _ = LessonSession.objects.get_or_create(
-                    timetable_entry=entry, lesson_date=date(2026, 2, 2 + len(sessions)),
+                lesson_date = {
+                    "MONDAY": date(2026, 2, 2),
+                    "TUESDAY": date(2026, 2, 3),
+                    "WEDNESDAY": date(2026, 2, 4),
+                }[day]
+                session, _ = LessonSession.objects.update_or_create(
+                    timetable_entry=entry,
+                    lesson_date=lesson_date,
                     defaults={
-                        "status": "COMPLETED", "topic": f"{ts.subject.name} Demo Lesson",
-                        "notes": "Seeded lesson session for testing.",
+                        "teacher": teacher_subject.teacher.user,
+                        "status": "COMPLETED",
+                        "remarks": f"{subject_name} demo lesson session.",
                     },
                 )
                 sessions.append(session)
 
-        attendance_count = 0
         attendance_specs = [
-            ("KEY001", sessions[0], "PRESENT"), ("KEY002", sessions[0], "ABSENT"),
-            ("KEY003", sessions[2], "LATE"), ("GVA001", sessions[3], "PRESENT"),
-            ("GVA002", sessions[3], "LATE"), ("GVA003", sessions[5], "ABSENT"),
+            ("KEY001", sessions[0], "PRESENT"),
+            ("KEY002", sessions[0], "ABSENT"),
+            ("KEY003", sessions[2], "LATE"),
+            ("GVA001", sessions[3], "PRESENT"),
+            ("GVA002", sessions[3], "LATE"),
+            ("GVA003", sessions[5], "ABSENT"),
         ]
+        attendance_count = 0
         for admission, session, status in attendance_specs:
-            AttendanceRecord.objects.get_or_create(
-                lesson_session=session, student=students[admission],
+            register, _ = AttendanceRegister.objects.update_or_create(
+                lesson_session=session,
+                defaults={
+                    "status": "SUBMITTED",
+                    "submitted_at": timezone.now(),
+                },
+            )
+            AttendanceRecord.objects.update_or_create(
+                attendance_register=register,
+                enrollment=enrollments[admission],
                 defaults={
                     "status": status,
-                    "marked_by": session.timetable_entry.teacher_subject.teacher.user,
                     "remarks": "Seeded attendance record.",
                 },
             )
@@ -416,53 +576,64 @@ class Command(BaseCommand):
 
         assessments = []
         for session in sessions[:2]:
-            assessment = Assessment.objects.get_or_create(
+            teacher = session.timetable_entry.teacher_subject.teacher
+            assessment, _ = Assessment.objects.update_or_create(
                 lesson_session=session,
-                teacher=session.timetable_entry.teacher_subject.teacher,
+                teacher=teacher,
                 title=f"{session.timetable_entry.teacher_subject.subject.name} Practice Assessment",
                 defaults={
                     "description": "Demo assessment for testing the assessment workflow.",
-                    "assessment_type": "ASSIGNMENT", "status": "PUBLISHED",
+                    "assessment_type": "ASSIGNMENT",
+                    "status": "PUBLISHED",
                     "due_date": session.lesson_date + timedelta(days=7),
-                    "maximum_score": Decimal("100.00"), "allow_resubmission": True,
+                    "maximum_score": Decimal("100.00"),
+                    "allow_resubmission": True,
                 },
-            )[0]
+            )
             assessments.append(assessment)
             classroom_enrollments = [
-                e for e in enrollments.values()
-                if e.classroom_id == session.timetable_entry.classroom_id
+                enrollment
+                for enrollment in enrollments.values()
+                if enrollment.classroom_id == session.timetable_entry.classroom_id
             ][:2]
             for index, enrollment in enumerate(classroom_enrollments):
-                submission = AssessmentSubmission.objects.get_or_create(
-                    assessment=assessment, enrollment=enrollment,
+                submission, _ = AssessmentSubmission.objects.update_or_create(
+                    assessment=assessment,
+                    enrollment=enrollment,
                     defaults={
                         "submitted_at": timezone.now(),
                         "submission_text": "This is a demo student submission.",
                         "submission_url": "https://example.com/demo-submission",
-                        "status": "GRADED", "is_late": index == 1,
+                        "status": "GRADED",
+                        "is_late": index == 1,
                         "teacher_notes": "Good effort. Demo feedback.",
                         "submitted_by": enrollment.student.user,
                     },
-                )[0]
-                AssessmentEvaluation.objects.get_or_create(
+                )
+                AssessmentEvaluation.objects.update_or_create(
                     submission=submission,
                     defaults={
                         "total_score": Decimal("82.00") - Decimal(index * 7),
                         "percentage": Decimal("82.00") - Decimal(index * 7),
                         "narrative_feedback": "Demonstrates good understanding of the learning objective.",
-                        "published": True, "published_at": timezone.now(),
+                        "published": True,
+                        "published_at": timezone.now(),
                     },
                 )
 
         for student in students.values():
-            portfolio = Portfolio.objects.get_or_create(
+            portfolio, _ = Portfolio.objects.update_or_create(
                 student=student,
-                defaults={"summary": "Demo learner portfolio showing project work and assessment evidence."},
-            )[0]
-            PortfolioItem.objects.get_or_create(
-                portfolio=portfolio, title="STEM Investigation Project",
                 defaults={
-                    "lesson_session": sessions[0] if sessions else None,
+                    "summary": "Demo learner portfolio showing project work and assessment evidence."
+                },
+            )
+            PortfolioItem.objects.update_or_create(
+                portfolio=portfolio,
+                title="STEM Investigation Project",
+                defaults={
+                    "lesson_session": sessions[0],
+                    "assessment_submission": None,
                     "item_type": "PROJECT",
                     "description": "A demo project item for portfolio testing.",
                     "event_date": date(2026, 2, 5),
@@ -472,16 +643,34 @@ class Command(BaseCommand):
         event_count = 0
         for code, school in schools.items():
             for title, event_type, start, end, location in [
-                ("Term 1 Parent Meeting", "MEETING", datetime(2026, 2, 14, 9), datetime(2026, 2, 14, 11), "Main Hall"),
-                ("Science Project Exhibition", "ACTIVITY", datetime(2026, 3, 12, 10), datetime(2026, 3, 12, 13), "Science Lab"),
+                (
+                    "Term 1 Parent Meeting",
+                    "MEETING",
+                    datetime(2026, 2, 14, 9),
+                    datetime(2026, 2, 14, 11),
+                    "Main Hall",
+                ),
+                (
+                    "Science Project Exhibition",
+                    "ACTIVITY",
+                    datetime(2026, 3, 12, 10),
+                    datetime(2026, 3, 12, 13),
+                    "Science Lab",
+                ),
             ]:
-                CalendarEvent.objects.get_or_create(
-                    school=school, academic_year=academic_years[code], title=title,
+                CalendarEvent.objects.update_or_create(
+                    school=school,
+                    academic_year=academic_years[code],
+                    title=title,
                     defaults={
-                        "term": terms[(code, 1)], "event_type": event_type,
-                        "start_at": timezone.make_aware(start), "end_at": timezone.make_aware(end),
-                        "all_day": False, "location": location,
-                        "description": "Demo calendar event.", "is_active": True,
+                        "term": terms[(code, 1)],
+                        "event_type": event_type,
+                        "start_at": timezone.make_aware(start),
+                        "end_at": timezone.make_aware(end),
+                        "all_day": False,
+                        "location": location,
+                        "description": "Demo calendar event.",
+                        "is_active": True,
                     },
                 )
                 event_count += 1
@@ -491,37 +680,56 @@ class Command(BaseCommand):
         for code, school in schools.items():
             school_users = [admin_users[code], *(teacher.user for teacher in teachers_by_school[code])]
             for recipient in school_users:
-                CommunicationMessage.objects.get_or_create(
-                    school=school, sender=admin_users[code], recipient=recipient,
+                CommunicationMessage.objects.update_or_create(
+                    school=school,
+                    sender=admin_users[code],
+                    recipient=recipient,
                     subject="Welcome to the demo school workspace",
                     defaults={"body": "Seeded communication message for testing."},
                 )
-                Notification.objects.get_or_create(
-                    school=school, recipient=recipient, title="Demo notification",
+                Notification.objects.update_or_create(
+                    school=school,
+                    recipient=recipient,
+                    title="Demo notification",
                     defaults={
                         "notification_type": "SYSTEM",
-                        "body": "Seeded notification for testing.", "link": "/",
+                        "body": "Seeded notification for testing.",
+                        "link": "/",
                     },
                 )
                 communication_count += 1
                 notification_count += 1
 
         return {
-            "Schools": 2, "System administrators": 1, "School administrators": 2,
-            "Teachers": 6, "Students": 6, "Parents": 4, "Academic years": 2,
-            "Terms": 6, "Classrooms": 6, "Teacher-subject assignments": len(teacher_subjects),
+            "Schools": 2,
+            "System administrators": 1,
+            "School administrators": 2,
+            "Teachers": 6,
+            "Students": 6,
+            "Parents": 4,
+            "Academic years": 2,
+            "Terms": 6,
+            "Classrooms": 6,
+            "Teacher-subject assignments": len(teacher_subjects),
             "Classroom teacher assignments": ClassroomTeacherAssignment.objects.filter(
                 classroom__school__short_name__in=schools.keys()
             ).count(),
             "Enrollments": len(enrollments),
             "Periods": Period.objects.filter(school__short_name__in=schools.keys()).count(),
-            "Timetables": len(timetables), "Timetable entries": len(entries),
-            "Lesson sessions": len(sessions), "Attendance records": attendance_count,
+            "Timetables": len(timetables),
+            "Timetable entries": len(entries),
+            "Lesson sessions": len(sessions),
+            "Attendance registers": AttendanceRegister.objects.filter(
+                lesson_session__in=sessions
+            ).count(),
+            "Attendance records": attendance_count,
             "Assessments": len(assessments),
             "Assessment evaluations": AssessmentEvaluation.objects.filter(
                 submission__assessment__in=assessments
             ).count(),
-            "Portfolio records": len(students), "Calendar events": event_count,
-            "Communication messages": communication_count, "Notifications": notification_count,
+            "Portfolio records": len(students),
+            "Calendar events": event_count,
+            "Communication messages": communication_count,
+            "Notifications": notification_count,
             "System administrator account": system_admin.email,
         }
