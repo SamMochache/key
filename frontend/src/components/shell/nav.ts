@@ -31,6 +31,11 @@ export const navGroups: NavGroup[] = [
     { label: 'Reports', to: '/reports', icon: 'FileBarChart', roles: ['admin', 'teacher'] }
   ] },
   { title: 'Platform', items: [
-    { label: 'Platform Dashboard', to: '/platform/dashboard', icon: 'ShieldCheck', roles: ['platform_admin'] }
+    { label: 'Platform Dashboard', to: '/platform/dashboard', icon: 'ShieldCheck', roles: ['platform_admin'] },
+    { label: 'Institutions', to: '/platform/institutions', icon: 'Building2', roles: ['platform_admin'] },
+    { label: 'Users', to: '/platform/users', icon: 'UsersRound', roles: ['platform_admin'] },
+    { label: 'Analytics', to: '/platform/analytics', icon: 'TrendingUp', roles: ['platform_admin'] },
+    { label: 'Audit Logs', to: '/platform/audit-logs', icon: 'FileClock', roles: ['platform_admin'] },
+    { label: 'Platform Settings', to: '/platform/settings', icon: 'Settings2', roles: ['platform_admin'] }
   ] }
 ];
