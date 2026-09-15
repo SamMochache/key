@@ -128,3 +128,31 @@ class StageSubjectSerializer(serializers.ModelSerializer):
 
 class ClassroomSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source="school.name", read_only=True)
+
+    class Meta:
+        model = Classroom
+        fields = [
+            "id",
+            "school",
+            "school_name",
+            "academic_year",
+            "term",
+            "cambridge_stage",
+            "montessori_level",
+            "name",
+            "code",
+            "capacity",
+            "is_active",
+            "student_count",
+            "subject_count",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "school_name",
+            "student_count",
+            "subject_count",
+            "created_at",
+            "updated_at",
+        ]
