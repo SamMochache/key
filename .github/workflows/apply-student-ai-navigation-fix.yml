@@ -17,13 +17,11 @@ jobs:
           ref: fix/student-ai-report-navigation
 
       - name: Update student profile tab navigation
-        shell: python
         run: |
+          python - <<'PY'
           from pathlib import Path
-
           path = Path('frontend/src/pages/StudentProfile.tsx')
           text = path.read_text()
-
           text = text.replace(
               "import { useParams, Link } from 'react-router-dom';",
               "import { useParams, Link, useSearchParams } from 'react-router-dom';",
@@ -37,9 +35,9 @@ jobs:
               "  const { id } = useParams();\n  const [searchParams, setSearchParams] = useSearchParams();\n  const [student, setStudent] = useState<ApiStudent | null>(null);\n  const [enrollments, setEnrollments] = useState<ApiEnrollment[]>([]);\n  const requestedTab = searchParams.get('tab') || 'overview';\n  const tab = TAB_ALIASES[requestedTab.toLowerCase()] || 'Overview';\n\n  const setTab = (nextTab: typeof TABS[number]) => {\n    const nextParams = new URLSearchParams(searchParams);\n    if (nextTab === 'Overview') nextParams.delete('tab');\n    else nextParams.set('tab', nextTab.toLowerCase().replace(/\\s+/g, '-'));\n    setSearchParams(nextParams);\n  };",
           )
           path.write_text(text)
-      - name: Verify navigation changes
-        run: |
+          PY
           grep -n "useSearchParams\|TAB_ALIASES\|requestedTab\|setSearchParams" frontend/src/pages/StudentProfile.tsx
+
       - name: Commit fix and remove temporary workflow
         run: |
           git config user.name "github-actions[bot]"
