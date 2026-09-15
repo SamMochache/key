@@ -91,7 +91,10 @@ class PublishedAINarrativeReportView(views.APIView):
                 results.append(_report_payload(report))
             except Exception:
                 logger.exception("Failed to serialize published AI report %s", report.id)
-        return JsonResponse({"results": results})
+        response = JsonResponse({"results": results})
+        response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response["Pragma"] = "no-cache"
+        return response
 
 
 def _published_report_for_user(request, report_id):
