@@ -21,9 +21,19 @@ export function StudentProfile() {
     const expected = [...TAB_NAMES].find((name) => tabSlug(name) === tab);
     if (!expected) return;
 
-    const button = [...document.querySelectorAll('button')]
-      .find((element) => element.textContent?.trim() === expected) as HTMLButtonElement | undefined;
-    if (button) button.click();
+    let attempts = 0;
+    const interval = window.setInterval(() => {
+      const button = [...document.querySelectorAll('button')]
+        .find((element) => element.textContent?.trim() === expected) as HTMLButtonElement | undefined;
+      if (button) {
+        button.click();
+        window.clearInterval(interval);
+      } else if (++attempts >= 40) {
+        window.clearInterval(interval);
+      }
+    }, 50);
+
+    return () => window.clearInterval(interval);
   }, [location.search]);
 
   const handleTabClick = (event: MouseEvent<HTMLDivElement>) => {
