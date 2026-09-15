@@ -11,6 +11,8 @@ class SchoolAccessPermission(permissions.BasePermission):
             return False
         if request.method in permissions.SAFE_METHODS:
             return self._user_school(request.user) is not None or self._is_platform_admin(request.user)
+        if getattr(view, "action", None) == "create":
+            return self._is_platform_admin(request.user)
         return self._is_platform_admin(request.user) or self._is_school_admin(request.user)
 
     def has_object_permission(self, request, view, obj):
@@ -18,7 +20,7 @@ class SchoolAccessPermission(permissions.BasePermission):
             return True
         school = self._user_school(request.user)
         if self._is_school_admin(request.user):
-            return school == obj
+            return request.method in {"PUT", "PATCH"} and school == obj
         return request.method in permissions.SAFE_METHODS and school == obj
 
     @staticmethod
