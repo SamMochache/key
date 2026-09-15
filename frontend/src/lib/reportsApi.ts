@@ -184,6 +184,7 @@ function normalizePublishedAIReport(report: any): PublishedAINarrativeResponse {
 async function jsonRequest(path: string, options: RequestInit = {}, retry = true) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
