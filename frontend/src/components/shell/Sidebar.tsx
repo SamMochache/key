@@ -11,10 +11,10 @@ function Icon({ name, className }: { name: string; className?: string }) {
 }
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { role, school, schoolStatus } = useApp();
-  const isPlatformAdmin = role === 'admin' && schoolStatus === 'unavailable' && !school;
+  const { role, school } = useApp();
+  const isPlatformAdmin = role === 'platform_admin';
   const schoolName = school?.name || (isPlatformAdmin ? 'KEY Platform Administration' : 'Your Institution');
-  const schoolShortName = school?.short_name || (isPlatformAdmin ? 'SUPER ADMIN' : 'INSTITUTION');
+  const schoolShortName = school?.short_name || (isPlatformAdmin ? 'PLATFORM ADMIN' : 'INSTITUTION');
 
   return (
     <>
@@ -32,19 +32,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         )}
       >
         <div className="flex items-center gap-3 px-5 h-16 shrink-0">
-          <div
-            aria-hidden="true"
-            className="h-9 w-9 rounded-xl bg-brand-600 text-white flex items-center justify-center font-display font-extrabold text-sm shadow-soft"
-          >
+          <div aria-hidden="true" className="h-9 w-9 rounded-xl bg-brand-600 text-white flex items-center justify-center font-display font-extrabold text-sm shadow-soft">
             KEY
           </div>
           <div className="leading-tight min-w-0">
-            <p className="font-display font-extrabold text-slate-800 dark:text-white text-[15px] truncate">
-              {schoolName}
-            </p>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium tracking-wide truncate">
-              {schoolShortName}
-            </p>
+            <p className="font-display font-extrabold text-slate-800 dark:text-white text-[15px] truncate">{schoolName}</p>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium tracking-wide truncate">{schoolShortName}</p>
           </div>
         </div>
 
@@ -54,9 +47,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             if (!items.length) return null;
             return (
               <div key={group.title}>
-                <p className="px-3 mb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-600">
-                  {group.title}
-                </p>
+                <p className="px-3 mb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-600">{group.title}</p>
                 <div className="space-y-0.5">
                   {items.map((item) => (
                     <NavLink
@@ -64,14 +55,10 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                       to={item.to}
                       end={item.to === '/'}
                       onClick={onClose}
-                      className={({ isActive }) =>
-                        cn(
-                          'group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition-colors',
-                          isActive
-                            ? 'bg-brand-600 text-white shadow-soft'
-                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                        )
-                      }
+                      className={({ isActive }) => cn(
+                        'group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition-colors',
+                        isActive ? 'bg-brand-600 text-white shadow-soft' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      )}
                     >
                       <Icon name={item.icon} className="h-[18px] w-[18px]" />
                       {item.label}
@@ -85,9 +72,9 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
         <div className="p-3">
           <div className="rounded-2xl bg-brand-50 dark:bg-slate-800 p-4">
-            <p className="text-sm font-bold text-brand-800 dark:text-brand-200">Growth over grades</p>
+            <p className="text-sm font-bold text-brand-800 dark:text-brand-200">{isPlatformAdmin ? 'Platform control' : 'Growth over grades'}</p>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Every child’s journey, observed with care.
+              {isPlatformAdmin ? 'Institution-level administration and oversight.' : 'Every child’s journey, observed with care.'}
             </p>
           </div>
         </div>
