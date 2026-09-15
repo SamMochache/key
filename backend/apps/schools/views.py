@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Count
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -36,6 +37,7 @@ class SchoolViewSet(viewsets.ModelViewSet):
                 return queryset.filter(pk=profile.school_id)
         return queryset.none()
 
+    @transaction.atomic
     def perform_create(self, serializer):
         school = serializer.save(
             country=serializer.validated_data.get(
@@ -56,6 +58,7 @@ class SchoolViewSet(viewsets.ModelViewSet):
             metadata={"name": school.name, "short_name": school.short_name},
         )
 
+    @transaction.atomic
     def perform_update(self, serializer):
         school = serializer.save()
         AuditLog.objects.create(
@@ -67,6 +70,7 @@ class SchoolViewSet(viewsets.ModelViewSet):
             metadata={"name": school.name, "short_name": school.short_name},
         )
 
+    @transaction.atomic
     def perform_destroy(self, instance):
         school_id = str(instance.id)
         school_name = instance.name
