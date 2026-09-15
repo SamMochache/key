@@ -237,6 +237,22 @@ class PlatformAdminContractTests(TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["id"], str(self.school.id))
 
+    def test_school_admin_cannot_create_another_institution(self):
+        self.client.force_authenticate(self.school_admin)
+        response = self.client.post(
+            "/api/schools/",
+            {"name": "Unauthorized School", "short_name": "UNAUTH"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(School.objects.filter(short_name="UNAUTH").exists())
+
+    def test_school_admin_cannot_delete_their_institution(self):
+        self.client.force_authenticate(self.school_admin)
+        response = self.client.delete(f"/api/schools/{self.school.id}/")
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(School.objects.filter(pk=self.school.id).exists())
+
     def test_platform_summary_is_not_available_to_school_admin(self):
         self.client.force_authenticate(self.school_admin)
         response = self.client.get("/api/platform/summary/")
