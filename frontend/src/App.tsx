@@ -5,6 +5,12 @@ import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { Layout } from './components/shell/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { PlatformDashboard } from './pages/PlatformDashboard';
+import { PlatformInstitutions } from './pages/PlatformInstitutions';
+import { PlatformInstitutionDetail } from './pages/PlatformInstitutionDetail';
+import { PlatformUsers } from './pages/PlatformUsers';
+import { PlatformAnalytics } from './pages/PlatformAnalytics';
+import { PlatformAuditLogs } from './pages/PlatformAuditLogs';
+import { PlatformSettings } from './pages/PlatformSettings';
 import { Login } from './pages/Login';
 import { Students } from './pages/Students';
 import { StudentProfile } from './pages/StudentProfile';
@@ -38,6 +44,7 @@ const ASSESSMENT_USERS = ['admin', 'teacher', 'student'] as const;
 const STUDENT = ['student'] as const;
 const PARENT = ['parent'] as const;
 const ADMIN = ['admin'] as const;
+const PLATFORM_ADMIN = ['platform_admin'] as const;
 
 function HomeRoute() {
   const { role } = useApp();
@@ -52,8 +59,14 @@ export function App() {
     <Route element={<ProtectedRoute />}><Route element={<Layout />}>
       <Route path="/" element={<HomeRoute />} />
 
-      <Route element={<ProtectedRoute roles={['platform_admin']} />}>
+      <Route element={<ProtectedRoute roles={[...PLATFORM_ADMIN]} />}>
         <Route path="/platform/dashboard" element={<PlatformDashboard />} />
+        <Route path="/platform/institutions" element={<PlatformInstitutions />} />
+        <Route path="/platform/institutions/:id" element={<PlatformInstitutionDetail />} />
+        <Route path="/platform/users" element={<PlatformUsers />} />
+        <Route path="/platform/analytics" element={<PlatformAnalytics />} />
+        <Route path="/platform/audit-logs" element={<PlatformAuditLogs />} />
+        <Route path="/platform/settings" element={<PlatformSettings />} />
       </Route>
 
       <Route element={<ProtectedRoute roles={[...PEOPLE]} />}><Route path="/students" element={<Students />} /><Route path="/students/:id" element={<StudentProfile />} /><Route path="/teachers" element={<Teachers />} /><Route path="/classes" element={<Classes />} /><Route path="/classes/:id" element={<ClassProfile />} /></Route>

@@ -12,6 +12,7 @@ from apps.communication.serializers import CommunicationContactSerializer, Commu
 from apps.enrollment.serializers import EnrollmentSerializer
 from apps.identity.models import User
 from apps.lessons.serializers import LessonSessionSerializer
+from apps.platform_admin.models import AuditLog, PlatformSetting
 from apps.portfolio.serializers import ArtifactSerializer, PortfolioItemSerializer, PortfolioSerializer
 from apps.schools.models import School, SchoolAdministrator
 from apps.schools.serializers import SchoolSerializer
@@ -146,9 +147,11 @@ class BackendTenantSmokeTests(TestCase):
         self.client.force_authenticate(self.admin_user)
         response = self.client.get("/api/classrooms/?active=true")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["student_count"], 0)
-        self.assertEqual(response.data[0]["subject_count"], 0)
+        payload = response.data
+        results = payload["results"] if isinstance(payload, dict) and "results" in payload else payload
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["student_count"], 0)
+        self.assertEqual(results[0]["subject_count"], 0)
 
     def test_school_admin_timetable_list_is_tenant_scoped(self):
         Timetable.objects.create(
@@ -172,8 +175,10 @@ class BackendTenantSmokeTests(TestCase):
         self.client.force_authenticate(self.admin_user)
         response = self.client.get("/api/timetables/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["school"], str(self.school_a.id))
+        payload = response.data
+        results = payload["results"] if isinstance(payload, dict) and "results" in payload else payload
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["school"], str(self.school_a.id))
 
 
 class PlatformAdminContractTests(TestCase):
@@ -218,12 +223,116 @@ class PlatformAdminContractTests(TestCase):
         self.client.force_authenticate(self.platform_user)
         response = self.client.get("/api/schools/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 2)
+        payload = response.data
+        results = payload["results"] if isinstance(payload, dict) and "results" in payload else payload
+        self.assertEqual(len(results), 2)
 
     def test_school_admin_only_sees_own_school(self):
         School.objects.create(name="School B", short_name="B")
         self.client.force_authenticate(self.school_admin)
         response = self.client.get("/api/schools/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["id"], str(self.school.id))
+        payload = response.data
+        results = payload["results"] if isinstance(payload, dict) and "results" in payload else payload
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], str(self.school.id))
+
+    def test_school_admin_cannot_create_another_institution(self):
+        self.client.force_authenticate(self.school_admin)
+        response = self.client.post(
+            "/api/schools/",
+            {"name": "Unauthorized School", "short_name": "UNAUTH"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(School.objects.filter(short_name="UNAUTH").exists())
+
+    def test_school_admin_cannot_delete_their_institution(self):
+        self.client.force_authenticate(self.school_admin)
+        response = self.client.delete(f"/api/schools/{self.school.id}/")
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(School.objects.filter(pk=self.school.id).exists())
+
+    def test_platform_summary_is_not_available_to_school_admin(self):
+        self.client.force_authenticate(self.school_admin)
+        response = self.client.get("/api/platform/summary/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_platform_summary_reports_real_counts(self):
+        self.client.force_authenticate(self.platform_user)
+        response = self.client.get("/api/platform/summary/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["institutions"], 1)
+        self.assertEqual(response.data["active_institutions"], 1)
+        self.assertEqual(response.data["users"], 2)
+
+    def test_platform_can_create_school_administrator_and_audit_it(self):
+        self.client.force_authenticate(self.platform_user)
+        response = self.client.post(
+            f"/api/platform/institutions/{self.school.id}/administrators/",
+            {
+                "email": "new-admin@test.local",
+                "first_name": "New",
+                "last_name": "Admin",
+                "password": "TestPass123!",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(
+            SchoolAdministrator.objects.filter(
+                user__email="new-admin@test.local",
+                school=self.school,
+            ).exists()
+        )
+        self.assertTrue(AuditLog.objects.filter(action="SCHOOL_ADMIN_CREATED").exists())
+
+    def test_platform_can_suspend_and_reactivate_a_user(self):
+        target = User.objects.create_user(
+            email="target@test.local",
+            password="TestPass123!",
+            first_name="Target",
+            last_name="User",
+        )
+        self.client.force_authenticate(self.platform_user)
+        response = self.client.patch(
+            f"/api/platform/users/{target.id}/status/",
+            {"is_active": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        target.refresh_from_db()
+        self.assertFalse(target.is_active)
+        self.assertEqual(target.status, "SUSPENDED")
+
+        response = self.client.patch(
+            f"/api/platform/users/{target.id}/status/",
+            {"is_active": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        target.refresh_from_db()
+        self.assertTrue(target.is_active)
+        self.assertEqual(target.status, "ACTIVE")
+
+    def test_platform_settings_are_persisted(self):
+        self.client.force_authenticate(self.platform_user)
+        response = self.client.get("/api/platform/settings/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["platform_name"], "KEY")
+        self.assertTrue(PlatformSetting.objects.filter(key="platform_name").exists())
+
+        response = self.client.patch(
+            "/api/platform/settings/",
+            {"platform_name": "KEY Education Platform"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["platform_name"], "KEY Education Platform")
+
+    def test_institution_overview_is_audited(self):
+        self.client.force_authenticate(self.platform_user)
+        response = self.client.get(f"/api/platform/institutions/{self.school.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["school"]["short_name"], "A")
+        self.assertTrue(AuditLog.objects.filter(action="INSTITUTION_VIEWED").exists())

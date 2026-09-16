@@ -32,6 +32,7 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     "apps.identity",
     "apps.schools",
+    "apps.platform_admin",
     "core",
     "apps.academics",
     "apps.enrollment",
@@ -112,10 +113,6 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
-# Keep an active browser session useful for normal school-admin work while
-# still requiring periodic re-authentication. Refresh tokens are deliberately
-# not rotated so several simultaneous expired requests cannot invalidate one
-# another's refresh token.
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
@@ -123,10 +120,6 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": False,
 }
 
-# JWT authentication is used by the frontend, so the browser's preflight
-# request must be answered before it reaches the token endpoint. Keep the
-# explicit environment setting for production and also support this project's
-# Vercel frontend domains by default.
 CORS_ALLOWED_ORIGINS = [
     origin.strip().rstrip("/")
     for origin in os.getenv("CORS_ALLOWED_ORIGINS", "https://key-two-alpha.vercel.app").split(",")
