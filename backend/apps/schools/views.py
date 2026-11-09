@@ -39,16 +39,18 @@ class SchoolViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def perform_create(self, serializer):
-        school = serializer.save(
-            country=serializer.validated_data.get(
-                "country",
-                _platform_setting("default_country", "Kenya"),
-            ),
-            timezone=serializer.validated_data.get(
-                "timezone",
-                _platform_setting("default_timezone", "Africa/Nairobi"),
-            ),
-        )
+        # dict.get(key, fallback()) evaluates fallback() even when the key is
+        # present. Resolve platform defaults only when the request omitted a
+        # value, avoiding unnecessary database reads during institution setup.
+        defaults = {}
+        if "country" not in serializer.validated_data:
+            defaults["country"] = _platform_setting("default_country", "Kenya")
+        if "timezone" not in serializer.validated_data:
+            defaults["timezone"] = _platform_setting(
+                "default_timezone", "Africa/Nairobi"
+            )
+
+        school = serializer.save(**defaults)
         AuditLog.objects.create(
             actor=self.request.user,
             school=school,
