@@ -4,6 +4,14 @@ import { Link } from 'react-router-dom';
 import { listSchools, type School } from '../lib/api';
 import { getPlatformSummary, listPlatformAuditLogs, type PlatformAuditLog, type PlatformSummary } from '../lib/platformApi';
 
+function readableError(error: unknown) {
+  const message = error instanceof Error ? error.message : 'An unexpected error occurred.';
+  if (/^\s*<!doctype html|^\s*<html[\s>]/i.test(message)) {
+    return 'The backend returned an HTML server error instead of JSON. Check the backend deployment logs for the failing endpoint.';
+  }
+  return message.slice(0, 500);
+}
+
 export function PlatformDashboard() {
   const [schools, setSchools] = useState<School[]>([]);
   const [summary, setSummary] = useState<PlatformSummary | null>(null);
@@ -14,20 +22,24 @@ export function PlatformDashboard() {
   const load = async () => {
     setLoading(true);
     setError('');
-    try {
-      const [schoolData, summaryData, auditData] = await Promise.all([
-        listSchools(),
-        getPlatformSummary(),
-        listPlatformAuditLogs(),
-      ]);
-      setSchools(schoolData);
-      setSummary(summaryData);
-      setAuditLogs(auditData.results.slice(0, 5));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load platform data.');
-    } finally {
-      setLoading(false);
-    }
+    const results = await Promise.allSettled([
+      listSchools(),
+      getPlatformSummary(),
+      listPlatformAuditLogs(),
+    ]);
+
+    const failures: string[] = [];
+    if (results[0].status === 'fulfilled') setSchools(results[0].value);
+    else failures.push(`Institutions: ${readableError(results[0].reason)}`);
+
+    if (results[1].status === 'fulfilled') setSummary(results[1].value);
+    else failures.push(`Platform statistics: ${readableError(results[1].reason)}`);
+
+    if (results[2].status === 'fulfilled') setAuditLogs(results[2].value.results.slice(0, 5));
+    else failures.push(`Recent activity: ${readableError(results[2].reason)}`);
+
+    setError(failures.join(' '));
+    setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
@@ -56,7 +68,7 @@ export function PlatformDashboard() {
         </div>
       </section>
 
-      {error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">{error}</div>}
+      {error && <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">{error}</div>}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map(({ label, value, icon: Icon }) => (
@@ -80,6 +92,7 @@ export function PlatformDashboard() {
                 <div className="flex shrink-0 items-center gap-4 text-sm"><span className="font-semibold text-slate-600 dark:text-slate-300">{school.student_count} students</span><span className="font-semibold text-slate-600 dark:text-slate-300">{school.teacher_count} teachers</span><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${school.is_active ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>{school.is_active ? 'Active' : 'Inactive'}</span></div>
               </Link>
             ))}
+            {!loading && schools.length === 0 && !error && <div className="px-6 py-10 text-sm text-slate-500">No institutions have been registered yet.</div>}
           </div>
         </div>
 

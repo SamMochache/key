@@ -68,6 +68,30 @@ export interface Paginated<T> {
   results: T[];
 }
 
+function getApiErrorMessage(detail: string, statusCode: number, contentType: string) {
+  const trimmed = detail.trim();
+  const looksLikeHtml =
+    contentType.includes('text/html') ||
+    /^<!doctype\s+html/i.test(trimmed) ||
+    /^<html[\s>]/i.test(trimmed);
+
+  if (looksLikeHtml) {
+    return `The KEY API returned an HTML server error (HTTP ${statusCode}) instead of JSON. Check the backend deployment logs for the underlying exception.`;
+  }
+
+  if (!trimmed) return `Platform API request failed (${statusCode})`;
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed.detail === 'string') return parsed.detail;
+    return Object.entries(parsed)
+      .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`)
+      .join(' ');
+  } catch {
+    return trimmed.slice(0, 500);
+  }
+}
+
 async function platformRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getAccessToken();
   const headers = new Headers(init.headers);
@@ -78,12 +102,7 @@ async function platformRequest<T>(path: string, init: RequestInit = {}): Promise
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers, cache: 'no-store' });
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    let message = detail;
-    try {
-      const parsed = JSON.parse(detail);
-      message = parsed.detail || Object.values(parsed).flat().join(' ');
-    } catch {}
-    throw new Error(message || `Platform API request failed (${response.status})`);
+    throw new Error(getApiErrorMessage(detail, response.status, response.headers.get('content-type') || ''));
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
