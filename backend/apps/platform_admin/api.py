@@ -111,7 +111,7 @@ class PlatformUserListView(APIView):
         if role:
             users = [user for user in users if user["role"] == role]
 
-        paginator = LimitOffsetPagination()
+        paginator = PlatformAdminPagination()
         page = paginator.paginate_queryset(users, request, view=self)
         return paginator.get_paginated_response(page)
 
@@ -156,6 +156,11 @@ class PlatformUserStatusView(APIView):
         return Response(PlatformUserListView._serialize(user))
 
 
+class PlatformAdminPagination(LimitOffsetPagination):
+    default_limit = 20
+    max_limit = 100
+
+
 class PlatformAuditLogView(APIView):
     permission_classes = [IsPlatformAdmin]
 
@@ -164,7 +169,7 @@ class PlatformAuditLogView(APIView):
         action = request.query_params.get("action", "").strip()
         if action:
             queryset = queryset.filter(action=action)
-        paginator = LimitOffsetPagination()
+        paginator = PlatformAdminPagination()
         page = paginator.paginate_queryset(queryset, request, view=self)
         data = [
             {
