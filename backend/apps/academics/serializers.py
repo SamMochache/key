@@ -41,6 +41,8 @@ class AcademicYearSerializer(serializers.ModelSerializer):
         end_date = attrs.get("end_date", getattr(self.instance, "end_date", None))
         school = attrs.get("school", getattr(self.instance, "school", None))
         user_school = _request_user_school(self)
+        if school is None and not _is_platform_admin(self):
+            school = user_school
         if not _is_platform_admin(self) and user_school is not None and school is not None and school.id != user_school.id:
             raise serializers.ValidationError({"school": "Academic years must belong to your institution."})
         if start_date and end_date and start_date > end_date:
