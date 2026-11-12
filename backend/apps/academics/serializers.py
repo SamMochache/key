@@ -220,7 +220,12 @@ class ClassroomSerializer(serializers.ModelSerializer):
         assignments.exclude(teacher=teacher).filter(is_active=True).update(is_active=False)
         assignment, _ = assignments.get_or_create(
             teacher=teacher,
-            defaults={"is_active": True},
+            defaults={
+                "classroom": classroom,
+                "teacher": teacher,
+                "role": ClassroomTeacherAssignment.Role.PRIMARY,
+                "is_active": True,
+            },
         )
         if not assignment.is_active:
             assignment.is_active = True
