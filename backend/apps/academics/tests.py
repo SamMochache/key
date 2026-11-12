@@ -7,8 +7,9 @@ from rest_framework.test import APITestCase
 from apps.identity.models import User
 from apps.schools.models import School
 from apps.enrollment.models import Enrollment
+from apps.teachers.models import Department, Teacher
 
-from .models import AcademicYear, CambridgeStage, Classroom, Curriculum, Programme, StageSubject, Subject, Term
+from .models import AcademicYear, CambridgeStage, Classroom, ClassroomTeacherAssignment, Curriculum, Programme, StageSubject, Subject, Term
 
 
 class AcademicsApiTests(APITestCase):
@@ -16,6 +17,25 @@ class AcademicsApiTests(APITestCase):
         self.school_a = School.objects.create(name="School A", short_name="A", city="Nairobi")
         self.school_b = School.objects.create(name="School B", short_name="B", city="Nairobi")
         self.admin = User.objects.create_superuser(email="admin@example.com", password="StrongPassword123!")
+        self.teacher_user = User.objects.create_user(
+            email="teacher@example.com",
+            password="StrongPassword123!",
+            first_name="Class",
+            last_name="Teacher",
+        )
+        department = Department.objects.create(
+            school=self.school_a,
+            name="Primary",
+            code="PRI",
+        )
+        self.teacher = Teacher.objects.create(
+            user=self.teacher_user,
+            school=self.school_a,
+            employee_number="T-001",
+            employment_type="FULL_TIME",
+            employment_date=date(2025, 1, 1),
+            department=department,
+        )
 
         self.student_user = User.objects.create_user(
             email="student@example.com",
@@ -136,6 +156,62 @@ class AcademicsApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 1)
         self.assertEqual(response.data["results"][0]["code"], "MATH")
+
+    def test_assigning_primary_teacher_persists_assignment_and_exposes_students(self):
+        self.client.force_authenticate(self.teacher_user)
+        before_assignment = self.client.get(reverse("student-list"))
+        self.assertEqual(before_assignment.status_code, status.HTTP_200_OK)
+        self.assertEqual(before_assignment.data["count"], 0)
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(
+            reverse("classroom-detail", kwargs={"pk": self.class_a.pk}),
+            {"primary_teacher": str(self.teacher.pk)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["primary_teacher_id"], str(self.teacher.pk))
+        self.assertEqual(response.data["primary_teacher_name"], "Class Teacher")
+        self.assertTrue(
+            ClassroomTeacherAssignment.objects.filter(
+                classroom=self.class_a,
+                teacher=self.teacher,
+                role=ClassroomTeacherAssignment.Role.PRIMARY,
+                is_active=True,
+            ).exists()
+        )
+
+        self.client.force_authenticate(self.teacher_user)
+        after_assignment = self.client.get(reverse("student-list"))
+        self.assertEqual(after_assignment.status_code, status.HTTP_200_OK)
+        self.assertEqual(after_assignment.data["count"], 1)
+        self.assertEqual(after_assignment.data["results"][0]["id"], str(self.student.pk))
+
+    def test_clearing_primary_teacher_deactivates_assignment(self):
+        ClassroomTeacherAssignment.objects.create(
+            classroom=self.class_a,
+            teacher=self.teacher,
+            role=ClassroomTeacherAssignment.Role.PRIMARY,
+            is_active=True,
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(
+            reverse("classroom-detail", kwargs={"pk": self.class_a.pk}),
+            {"primary_teacher": None},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["primary_teacher_id"])
+        self.assertFalse(
+            ClassroomTeacherAssignment.objects.filter(
+                classroom=self.class_a,
+                teacher=self.teacher,
+                role=ClassroomTeacherAssignment.Role.PRIMARY,
+                is_active=True,
+            ).exists()
+        )
 
     def test_student_cannot_create_classroom(self):
         self.client.force_authenticate(self.student_user)
