@@ -211,6 +211,7 @@ class ClassroomSerializer(serializers.ModelSerializer):
         )
         if teacher is None:
             assignments.filter(is_active=True).update(is_active=False)
+            getattr(classroom, "_prefetched_objects_cache", {}).pop("teacher_assignments", None)
             return
 
         # Deactivate the previous class teacher before activating the selected one.
@@ -224,6 +225,9 @@ class ClassroomSerializer(serializers.ModelSerializer):
         if not assignment.is_active:
             assignment.is_active = True
             assignment.save(update_fields=["is_active", "updated_at"])
+        # The viewset prefetches assignments; invalidate that cache so the
+        # response serializer reflects the just-saved relationship.
+        getattr(classroom, "_prefetched_objects_cache", {}).pop("teacher_assignments", None)
 
     @transaction.atomic
     def create(self, validated_data):
