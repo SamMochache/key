@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from apps.assessments.permissions import teacher_can_access_classroom
 from apps.timetables.models.timetable_entry import TimetableEntry
+from core.constants.lesson import LessonStatus
 from core.constants.timetable import TimetableStatus, WeekDay
 
 from .models import LessonSession
@@ -193,7 +194,7 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
                     lesson_date=lesson_date,
                     defaults={
                         "teacher": entry.teacher_subject.teacher.user,
-                        "status": LessonSession.Status.SCHEDULED,
+                        "status": LessonStatus.SCHEDULED,
                     },
                 )
                 lesson_ids.append(lesson.id)
@@ -213,10 +214,10 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
     def start(self, request, pk=None):
         lesson = self.get_object()
         self._require_assigned_teacher(lesson)
-        if lesson.status != LessonSession.Status.SCHEDULED:
+        if lesson.status != LessonStatus.SCHEDULED:
             raise ValidationError({"status": "Only scheduled lessons can be started."})
 
-        lesson.status = LessonSession.Status.IN_PROGRESS
+        lesson.status = LessonStatus.IN_PROGRESS
         lesson.started_at = timezone.now()
         lesson.ended_at = None
         lesson.save(update_fields=["status", "started_at", "ended_at", "updated_at"])
@@ -226,10 +227,10 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
     def complete(self, request, pk=None):
         lesson = self.get_object()
         self._require_assigned_teacher(lesson)
-        if lesson.status != LessonSession.Status.IN_PROGRESS:
+        if lesson.status != LessonStatus.IN_PROGRESS:
             raise ValidationError({"status": "Only lessons in progress can be completed."})
 
-        lesson.status = LessonSession.Status.COMPLETED
+        lesson.status = LessonStatus.COMPLETED
         lesson.ended_at = timezone.now()
         if "remarks" in request.data:
             lesson.remarks = str(request.data.get("remarks") or "").strip()
