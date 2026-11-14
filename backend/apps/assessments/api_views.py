@@ -82,9 +82,7 @@ class AssessmentViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
             if teacher is None:
                 raise PermissionDenied("Teacher profile not found.")
             queryset = queryset.filter(
-                lesson_session__timetable_entry__teacher_subject__teacher_id=teacher.id,
-
-                lesson_session__timetable_entry__teacher_subject__is_active=True,
+                teacher_id=teacher.id,
             ).distinct()
         return queryset
 
@@ -418,9 +416,7 @@ class DashboardSummaryView(SchoolScopedQuerysetMixin, viewsets.ViewSet):
                 if teacher is None:
                     raise PermissionDenied("Teacher profile not found.")
                 assessments = assessments.filter(
-                    lesson_session__timetable_entry__teacher_subject__teacher_id=teacher.id,
-
-                    lesson_session__timetable_entry__teacher_subject__is_active=True,
+                    teacher_id=teacher.id,
                 ).distinct()
                 submissions = submissions.filter(
                     assessment__teacher_id=teacher.id,
