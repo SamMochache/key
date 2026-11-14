@@ -148,12 +148,23 @@ class TeacherSubjectSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"subject": "Choose an active subject."})
         if classroom and academic_year and classroom.academic_year_id != academic_year.pk:
             raise serializers.ValidationError({"academic_year": "The academic year must match the selected classroom."})
+        if classroom and academic_year and classroom.school_id != academic_year.school_id:
+            raise serializers.ValidationError({"academic_year": "The academic year must belong to the classroom's institution."})
         if classroom and term and classroom.term_id != term.pk:
             raise serializers.ValidationError({"term": "The term must match the selected classroom."})
         if academic_year and term and term.academic_year_id != academic_year.pk:
             raise serializers.ValidationError({"term": "The selected term must belong to the academic year."})
         if start_date and end_date and end_date < start_date:
             raise serializers.ValidationError({"end_date": "The end date cannot be earlier than the start date."})
+        if all((teacher, subject, classroom, academic_year, term)):
+            duplicate = TeacherSubject.objects.filter(
+                teacher=teacher, subject=subject, classroom=classroom,
+                academic_year=academic_year, term=term,
+            )
+            if self.instance:
+                duplicate = duplicate.exclude(pk=self.instance.pk)
+            if duplicate.exists():
+                raise serializers.ValidationError({"non_field_errors": "This teacher is already assigned to this subject and classroom for the selected academic term."})
 
         if request and classroom:
             school = get_user_school(request.user)
