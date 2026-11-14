@@ -126,13 +126,20 @@ export function Assessments() {
       };
       if (isAdmin) payload.teacher = form.teacher;
       const created = await createAssessment(payload);
-      const rubric = await createRubric({ assessment: created.id, title: `${created.title} Rubric`, description: 'Assessment scoring rubric' });
-      await createRubricCriterion({ rubric: rubric.id, title: 'Overall performance', description: 'Demonstrates the expected learning outcome.', maximum_score: Number(form.maximumScore || 100), sequence: 1 });
-      const refreshed = await listAssessments();
-      setAssessments(refreshed);
-      setSelectedAssessment(refreshed.find((a) => a.id === created.id) || created);
+      setAssessments((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      setSelectedAssessment(created);
       setModal(null);
-      setMessage('Assessment created as a draft with a scoring rubric.');
+
+      try {
+        const rubric = await createRubric({ assessment: created.id, title: `${created.title} Rubric`, description: 'Assessment scoring rubric' });
+        await createRubricCriterion({ rubric: rubric.id, title: 'Overall performance', description: 'Demonstrates the expected learning outcome.', maximum_score: Number(form.maximumScore || 100), sequence: 1 });
+        const refreshed = await listAssessments();
+        setAssessments(refreshed);
+        setSelectedAssessment(refreshed.find((a) => a.id === created.id) || created);
+        setMessage('Assessment created as a draft with a scoring rubric.');
+      } catch (rubricError) {
+        setMessage(`Assessment created, but rubric setup failed: ${rubricError instanceof Error ? rubricError.message : 'Unknown rubric error'}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to create assessment.');
     } finally { setSaving(false); }
