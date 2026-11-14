@@ -125,7 +125,6 @@ class TeacherSubjectSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         from apps.assessments.permissions import get_user_school
-        from apps.teachers.models.teacher import Teacher
 
         teacher = attrs.get("teacher", getattr(self.instance, "teacher", None))
         subject = attrs.get("subject", getattr(self.instance, "subject", None))
