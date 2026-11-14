@@ -76,6 +76,7 @@ class AssessmentSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"teacher": "Teachers can only manage their own assessments."})
             if lesson is not None and lesson.timetable_entry.teacher_subject.teacher_id != current_teacher.id:
                 raise serializers.ValidationError({"lesson_session": "You can only create assessments for lessons assigned to you."})
+            attrs["teacher"] = current_teacher
             teacher = current_teacher
 
         if lesson is not None and teacher is not None:
