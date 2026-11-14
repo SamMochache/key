@@ -202,6 +202,14 @@ class TimetableEntryViewSet(viewsets.ModelViewSet):
         if not is_platform_admin(self.request.user):
             school = user_school(self.request.user)
             queryset = queryset.filter(timetable__school=school, timetable__status=TimetableStatus.PUBLISHED) if school and get_user_role(self.request.user) != UserRole.ADMIN else queryset.filter(timetable__school=school) if school else queryset.none()
+        if get_user_role(self.request.user) == UserRole.TEACHER:
+            teacher = getattr(self.request.user, "teacher_profile", None)
+            if teacher is None:
+                return queryset.none()
+            queryset = queryset.filter(
+                teacher_subject__teacher_id=teacher.id,
+                teacher_subject__is_active=True,
+            )
         for param, field in (
             ("timetable", "timetable_id"),
             ("classroom", "classroom_id"),

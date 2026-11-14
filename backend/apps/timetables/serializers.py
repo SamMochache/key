@@ -117,4 +117,19 @@ class TimetableEntrySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"teacher_subject": "Teacher assignment must match the selected classroom and academic period."})
         if assignment.teacher.school_id != timetable.school_id or not assignment.is_active:
             raise serializers.ValidationError({"teacher_subject": "Teacher assignment must be active and belong to the timetable's institution."})
+        if period.is_break:
+            raise serializers.ValidationError({"period": "A break period cannot be assigned a teaching lesson."})
+        timetable_end = timetable.effective_to or timetable.term.end_date
+        if assignment.start_date > timetable_end or (
+            assignment.end_date is not None and assignment.end_date < timetable.effective_from
+        ):
+            raise serializers.ValidationError({
+                "teacher_subject": "The teacher-subject assignment must be active during the timetable's effective period."
+            })
+        if timetable.effective_from > timetable.term.end_date or (
+            timetable.effective_to is not None and timetable.effective_to < timetable.term.start_date
+        ):
+            raise serializers.ValidationError({
+                "timetable": "The timetable's effective dates must overlap its academic term."
+            })
         return attrs

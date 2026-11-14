@@ -1,14 +1,13 @@
 from datetime import date
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
-from apps.assessments.permissions import teacher_can_access_classroom
 from apps.timetables.models.timetable_entry import TimetableEntry
 from core.constants.lesson import LessonStatus
 from core.constants.timetable import TimetableStatus, WeekDay
@@ -40,6 +39,19 @@ def is_admin(user):
     return bool(is_platform_admin(user) or (school_admin is not None and school_admin.is_active))
 
 
+def teacher_can_access_lesson(user, lesson):
+    teacher = getattr(user, "teacher_profile", None)
+    if teacher is None:
+        return False
+    assignment = lesson.timetable_entry.teacher_subject
+    return (
+        assignment.teacher_id == teacher.id
+        and assignment.is_active
+        and assignment.start_date <= lesson.lesson_date
+        and (assignment.end_date is None or assignment.end_date >= lesson.lesson_date)
+    )
+
+
 def weekday_for(day):
     values = {
         0: WeekDay.MONDAY,
@@ -66,8 +78,7 @@ class LessonAccessPermission(permissions.BasePermission):
             return True
         teacher = getattr(request.user, "teacher_profile", None)
         if teacher is not None:
-            classroom_id = obj.timetable_entry.classroom_id
-            return obj.teacher_id == request.user.id and teacher_can_access_classroom(request.user, classroom_id)
+            return obj.teacher_id == request.user.id and teacher_can_access_lesson(request.user, obj)
         return obj.timetable_entry.classroom.school_id == school_id_for(request.user)
 
 
@@ -93,8 +104,12 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
             if teacher is not None and not (school_admin is not None and school_admin.is_active):
                 qs = qs.filter(
                     teacher_id=self.request.user.id,
-                    timetable_entry__classroom__teacher_assignments__teacher_id=teacher.id,
-                    timetable_entry__classroom__teacher_assignments__is_active=True,
+                    timetable_entry__teacher_subject__teacher_id=teacher.id,
+                    timetable_entry__teacher_subject__is_active=True,
+                    timetable_entry__teacher_subject__start_date__lte=F("lesson_date"),
+                ).filter(
+                    Q(timetable_entry__teacher_subject__end_date__isnull=True)
+                    | Q(timetable_entry__teacher_subject__end_date__gte=F("lesson_date"))
                 )
             elif student is not None and not (school_admin is not None and school_admin.is_active):
                 qs = qs.filter(timetable_entry__classroom__enrollments__student_id=student.id)
@@ -128,19 +143,26 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
         teacher = serializer.validated_data["teacher"]
         if not is_admin(self.request.user) and teacher.id != self.request.user.id:
             raise PermissionDenied("Teachers can only create lessons assigned to themselves.")
-        if not is_admin(self.request.user) and not teacher_can_access_classroom(
-            self.request.user, serializer.validated_data["timetable_entry"].classroom_id
-        ):
-            raise PermissionDenied("You can only create lessons in an assigned classroom.")
+        if not is_admin(self.request.user):
+            entry = serializer.validated_data["timetable_entry"]
+            lesson_date = serializer.validated_data["lesson_date"]
+            assignment = entry.teacher_subject
+            teacher = getattr(self.request.user, "teacher_profile", None)
+            if (
+                teacher is None
+                or teacher.id != assignment.teacher_id
+                or not assignment.is_active
+                or assignment.start_date > lesson_date
+                or (assignment.end_date is not None and assignment.end_date < lesson_date)
+            ):
+                raise PermissionDenied("You can only create lessons for active subject assignments assigned to you.")
         serializer.save()
 
     def _require_assigned_teacher(self, lesson):
         if is_admin(self.request.user):
             return
-        if lesson.teacher_id != self.request.user.id:
-            raise PermissionDenied("You can only manage lessons assigned to you.")
-        if not teacher_can_access_classroom(self.request.user, lesson.timetable_entry.classroom_id):
-            raise PermissionDenied("You are not assigned to this classroom.")
+        if lesson.teacher_id != self.request.user.id or not teacher_can_access_lesson(self.request.user, lesson):
+            raise PermissionDenied("You can only manage lessons assigned to you through an active subject assignment.")
 
     @action(detail=False, methods=["post"], url_path="sync-day")
     def sync_day(self, request):
@@ -169,7 +191,11 @@ class LessonSessionViewSet(viewsets.ModelViewSet):
             weekday=weekday,
             classroom__is_active=True,
             teacher_subject__is_active=True,
-        ).filter(Q(timetable__effective_to__isnull=True) | Q(timetable__effective_to__gte=lesson_date))
+            teacher_subject__start_date__lte=lesson_date,
+        ).filter(
+            Q(timetable__effective_to__isnull=True) | Q(timetable__effective_to__gte=lesson_date),
+            Q(teacher_subject__end_date__isnull=True) | Q(teacher_subject__end_date__gte=lesson_date),
+        )
 
         if is_platform_admin(request.user):
             requested_school = request.data.get("school")

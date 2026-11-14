@@ -66,20 +66,29 @@ export function Assessments() {
     setLoading(true);
     setError('');
     try {
-      const [me, a, s, l, e] = await Promise.all([
-        getCurrentUser(),
+      const me = await getCurrentUser();
+      const [assessmentResult, submissionResult, lessonResult, enrollmentResult] = await Promise.allSettled([
         listAssessments(),
         listSubmissions(),
         listLessons(),
         listEnrollments({ status: 'ENROLLED' }),
       ]);
+
+      if (assessmentResult.status === 'rejected') throw assessmentResult.reason;
       setUser(me);
-      setAssessments(a);
-      setSubmissions(s);
-      setLessons(l);
-      setEnrollments(e);
+      setAssessments(assessmentResult.value);
+      setSubmissions(submissionResult.status === 'fulfilled' ? submissionResult.value : []);
+      setLessons(lessonResult.status === 'fulfilled' ? lessonResult.value : []);
+      setEnrollments(enrollmentResult.status === 'fulfilled' ? enrollmentResult.value : []);
+
       if (me.role === 'admin') setTeachers(await listTeachers({ status: 'ACTIVE' }));
       else setTeachers([]);
+
+      if (lessonResult.status === 'rejected') {
+        setError('Assessments loaded, but lessons could not be loaded. Check the Lessons page and your teaching assignments.');
+      } else if (submissionResult.status === 'rejected' || enrollmentResult.status === 'rejected') {
+        setError('Assessments loaded, but some submission or enrolment information could not be loaded.');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load assessments.');
     } finally {
@@ -117,13 +126,20 @@ export function Assessments() {
       };
       if (isAdmin) payload.teacher = form.teacher;
       const created = await createAssessment(payload);
-      const rubric = await createRubric({ assessment: created.id, title: `${created.title} Rubric`, description: 'Assessment scoring rubric' });
-      await createRubricCriterion({ rubric: rubric.id, title: 'Overall performance', description: 'Demonstrates the expected learning outcome.', maximum_score: Number(form.maximumScore || 100), sequence: 1 });
-      const refreshed = await listAssessments();
-      setAssessments(refreshed);
-      setSelectedAssessment(refreshed.find((a) => a.id === created.id) || created);
+      setAssessments((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      setSelectedAssessment(created);
       setModal(null);
-      setMessage('Assessment created as a draft with a scoring rubric.');
+
+      try {
+        const rubric = await createRubric({ assessment: created.id, title: `${created.title} Rubric`, description: 'Assessment scoring rubric' });
+        await createRubricCriterion({ rubric: rubric.id, title: 'Overall performance', description: 'Demonstrates the expected learning outcome.', maximum_score: Number(form.maximumScore || 100), sequence: 1 });
+        const refreshed = await listAssessments();
+        setAssessments(refreshed);
+        setSelectedAssessment(refreshed.find((a) => a.id === created.id) || created);
+        setMessage('Assessment created as a draft with a scoring rubric.');
+      } catch (rubricError) {
+        setMessage(`Assessment created, but rubric setup failed: ${rubricError instanceof Error ? rubricError.message : 'Unknown rubric error'}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to create assessment.');
     } finally { setSaving(false); }
