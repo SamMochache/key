@@ -69,11 +69,23 @@ export function Timetables() {
 
   useEffect(() => {
     if (!selectedTimetable) { setEntries([]); return; }
-    Promise.all([
-      listTimetableEntries({ timetable: selectedTimetable }),
-      listTeacherSubjects({ classroom: selectedClassroom || undefined, academicYear: selectedYear, term: selectedTerm, active: true }),
-    ]).then(([entryData, assignmentData]) => { setEntries(entryData); setAssignments(assignmentData); }).catch((err) => setError(err instanceof Error ? err.message : 'Unable to load timetable entries.'));
-  }, [selectedTimetable, selectedClassroom, selectedYear, selectedTerm]);
+    listTimetableEntries({ timetable: selectedTimetable })
+      .then(setEntries)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Unable to load timetable entries.'));
+  }, [selectedTimetable]);
+
+  // Load all active teacher-subject assignments for the selected academic period.
+  // The classroom is selected inside the Add Lesson modal, so filtering the API
+  // request by the page-level classroom filter can leave the modal with stale options.
+  useEffect(() => {
+    if (!selectedYear || !selectedTerm) { setAssignments([]); return; }
+    listTeacherSubjects({ academicYear: selectedYear, term: selectedTerm, active: true })
+      .then(setAssignments)
+      .catch((err) => {
+        setAssignments([]);
+        setError(err instanceof Error ? err.message : 'Unable to load teacher-subject assignments.');
+      });
+  }, [selectedYear, selectedTerm]);
 
   const refreshTimetables = async (preferredId?: string) => {
     const data = await listTimetables({ academicYear: selectedYear, term: selectedTerm });
@@ -179,6 +191,7 @@ export function Timetables() {
         <Select label="Period" value={entryForm.period} onChange={(value) => setEntryForm({ ...entryForm, period: value })}><option value="">Select period</option>{periods.filter((item) => !item.is_break).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.start_time.slice(0, 5)}–{item.end_time.slice(0, 5)}</option>)}</Select>
         <Select label="Classroom" value={entryForm.classroom} onChange={(value) => setEntryForm({ ...entryForm, classroom: value, teacher_subject: '' })}>{classrooms.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select>
         <Select label="Teacher / Subject" value={entryForm.teacher_subject} onChange={(value) => setEntryForm({ ...entryForm, teacher_subject: value })}><option value="">Select assignment</option>{assignments.filter((item) => item.classroom === entryForm.classroom).map((item) => <option key={item.id} value={item.id}>{item.subject_name} · {item.teacher_name}</option>)}</Select>
+        {entryForm.classroom && !assignments.some((item) => item.classroom === entryForm.classroom) && <p className="text-xs text-amber-600 dark:text-amber-400">No active teacher–subject assignments exist for this classroom in the selected academic year and term. Create or activate a teacher-subject assignment first, then return here.</p>}
         <Input label="Room (optional)" value={entryForm.room} onChange={(value) => setEntryForm({ ...entryForm, room: value })} />
         <div className="flex justify-end gap-2 pt-2"><Button variant="secondary" onClick={() => setEntryOpen(false)}>Cancel</Button><Button onClick={addEntry} disabled={saving || !entryForm.period || !entryForm.classroom || !entryForm.teacher_subject}>{saving ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <SaveIcon className="h-4 w-4" />} Save lesson</Button></div>
       </div>
