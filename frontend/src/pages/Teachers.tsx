@@ -6,7 +6,7 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Avatar } from '../components/ui/Avatar';
 import { useApp } from '../context/AppContext';
-import { listSchools, listTeachers, listDepartments, createTeacher, updateTeacher, listAcademicYears, listTerms, listSubjects, listClassrooms, type ApiTeacher, type ApiDepartment, type School, type ApiAcademicYear, type ApiTerm, type ApiSubject, type ApiClassroom } from '../lib/api';
+import { listSchools, listTeachers, listDepartments, createTeacher, updateTeacher, listSubjects, listClassrooms, type ApiTeacher, type ApiDepartment, type School, type ApiSubject, type ApiClassroom } from '../lib/api';
 import { listTeacherSubjects, createTeacherSubject, updateTeacherSubject, type ApiTeacherSubject } from '../lib/timetableApi';
 
 const statusTone = { ACTIVE: 'emerald', ON_LEAVE: 'warm', SUSPENDED: 'slate', RESIGNED: 'slate', RETIRED: 'slate' } as const;
@@ -28,8 +28,6 @@ export function Teachers() {
   const [form, setForm] = useState<Form>(blank);
   const [saving, setSaving] = useState(false);
   const [assignments, setAssignments] = useState<ApiTeacherSubject[]>([]);
-  const [years, setYears] = useState<ApiAcademicYear[]>([]);
-  const [terms, setTerms] = useState<ApiTerm[]>([]);
   const [subjects, setSubjects] = useState<ApiSubject[]>([]);
   const [classrooms, setClassrooms] = useState<ApiClassroom[]>([]);
   const [assignmentOpen, setAssignmentOpen] = useState(false);
@@ -48,9 +46,9 @@ export function Teachers() {
   const loadAssignments = async () => {
     try {
       const [a, y, t, sub, cls] = await Promise.all([
-        listTeacherSubjects(), listAcademicYears(), listTerms(), listSubjects({ active: true }), listClassrooms({ active: true }),
+        listTeacherSubjects(), listSubjects({ active: true }), listClassrooms({ active: true }),
       ]);
-      setAssignments(a); setYears(y); setTerms(t); setSubjects(sub); setClassrooms(cls);
+      setAssignments(a); setSubjects(sub); setClassrooms(cls);
     } catch (err) { setAssignmentError(err instanceof Error ? err.message : 'Unable to load teaching assignments.'); }
   };
   useEffect(() => { if (isAdmin) void loadAssignments(); }, [isAdmin]);
