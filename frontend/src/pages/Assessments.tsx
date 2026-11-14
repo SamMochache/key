@@ -66,20 +66,29 @@ export function Assessments() {
     setLoading(true);
     setError('');
     try {
-      const [me, a, s, l, e] = await Promise.all([
-        getCurrentUser(),
+      const me = await getCurrentUser();
+      const [assessmentResult, submissionResult, lessonResult, enrollmentResult] = await Promise.allSettled([
         listAssessments(),
         listSubmissions(),
         listLessons(),
         listEnrollments({ status: 'ENROLLED' }),
       ]);
+
+      if (assessmentResult.status === 'rejected') throw assessmentResult.reason;
       setUser(me);
-      setAssessments(a);
-      setSubmissions(s);
-      setLessons(l);
-      setEnrollments(e);
+      setAssessments(assessmentResult.value);
+      setSubmissions(submissionResult.status === 'fulfilled' ? submissionResult.value : []);
+      setLessons(lessonResult.status === 'fulfilled' ? lessonResult.value : []);
+      setEnrollments(enrollmentResult.status === 'fulfilled' ? enrollmentResult.value : []);
+
       if (me.role === 'admin') setTeachers(await listTeachers({ status: 'ACTIVE' }));
       else setTeachers([]);
+
+      if (lessonResult.status === 'rejected') {
+        setError('Assessments loaded, but lessons could not be loaded. Check the Lessons page and your teaching assignments.');
+      } else if (submissionResult.status === 'rejected' || enrollmentResult.status === 'rejected') {
+        setError('Assessments loaded, but some submission or enrolment information could not be loaded.');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load assessments.');
     } finally {
