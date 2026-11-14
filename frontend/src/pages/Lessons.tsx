@@ -51,7 +51,7 @@ export function Lessons() {
     setLoading(true);
     setError(null);
     try {
-      if (role === 'teacher') {
+      if (role === 'teacher' || role === 'admin') {
         await syncLessonDay(selectedDate);
       }
       const data = await listLessons({ lessonDate: selectedDate });
