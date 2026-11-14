@@ -84,8 +84,9 @@ class AssessmentViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
             if teacher is None:
                 raise PermissionDenied("Teacher profile not found.")
             queryset = queryset.filter(
-                lesson_session__timetable_entry__classroom__teacher_assignments__teacher_id=teacher.id,
-                lesson_session__timetable_entry__classroom__teacher_assignments__is_active=True,
+                lesson_session__timetable_entry__teacher_subject__teacher_id=teacher.id,
+
+                lesson_session__timetable_entry__teacher_subject__is_active=True,
             ).distinct()
         return queryset
 
@@ -98,10 +99,18 @@ class AssessmentViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
         except ObjectDoesNotExist as exc:
             raise PermissionDenied("Only teachers can create assessments.") from exc
         lesson_session = serializer.validated_data.get("lesson_session")
-        if lesson_session is None or not teacher_can_access_classroom(
-            self.request.user, lesson_session.timetable_entry.classroom_id
+        if (
+            lesson_session is None
+            or lesson_session.teacher_id != self.request.user.id
+            or lesson_session.timetable_entry.teacher_subject.teacher_id != teacher.id
+            or not lesson_session.timetable_entry.teacher_subject.is_active
+            or lesson_session.timetable_entry.teacher_subject.start_date > lesson_session.lesson_date
+            or (
+                lesson_session.timetable_entry.teacher_subject.end_date is not None
+                and lesson_session.timetable_entry.teacher_subject.end_date < lesson_session.lesson_date
+            )
         ):
-            raise PermissionDenied("You are not assigned to the assessment classroom.")
+            raise PermissionDenied("You are not assigned to this lesson through an active teacher-subject assignment.")
         serializer.save(teacher=teacher)
 
 
@@ -133,8 +142,7 @@ class AssessmentSubmissionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
             if teacher is None:
                 raise PermissionDenied("Teacher profile not found.")
             queryset = queryset.filter(
-                enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
-                enrollment__classroom__teacher_assignments__is_active=True,
+                assessment__teacher_id=teacher.id,
             ).distinct()
         student_id = self.request.query_params.get("student")
         if student_id:
@@ -188,8 +196,7 @@ class RubricViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
             if teacher is None:
                 raise PermissionDenied("Teacher profile not found.")
             queryset = queryset.filter(
-                assessment__lesson_session__timetable_entry__classroom__teacher_assignments__teacher_id=teacher.id,
-                assessment__lesson_session__timetable_entry__classroom__teacher_assignments__is_active=True,
+                assessment__teacher_id=teacher.id,
             ).distinct()
         return queryset
 
@@ -206,8 +213,7 @@ class RubricCriterionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
             if teacher is None:
                 raise PermissionDenied("Teacher profile not found.")
             queryset = queryset.filter(
-                rubric__assessment__lesson_session__timetable_entry__classroom__teacher_assignments__teacher_id=teacher.id,
-                rubric__assessment__lesson_session__timetable_entry__classroom__teacher_assignments__is_active=True,
+                rubric__assessment__teacher_id=teacher.id,
             ).distinct()
         return queryset
 
@@ -231,8 +237,7 @@ class AssessmentEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
                 if teacher is None:
                     raise PermissionDenied("Teacher profile not found.")
                 queryset = queryset.filter(
-                    submission__enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
-                    submission__enrollment__classroom__teacher_assignments__is_active=True,
+                    submission__assessment__teacher_id=teacher.id,
                 ).distinct()
 
         submission_id = self.request.query_params.get("submission")
@@ -300,8 +305,7 @@ class CriterionScoreViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
             if teacher is None:
                 raise PermissionDenied("Teacher profile not found.")
             queryset = queryset.filter(
-                evaluation__submission__enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
-                evaluation__submission__enrollment__classroom__teacher_assignments__is_active=True,
+                evaluation__submission__assessment__teacher_id=teacher.id,
             ).distinct()
         return queryset
 
@@ -358,8 +362,7 @@ class CompetencyEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
             if teacher is None:
                 raise PermissionDenied("Teacher profile not found.")
             queryset = queryset.filter(
-                evaluation__submission__enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
-                evaluation__submission__enrollment__classroom__teacher_assignments__is_active=True,
+                evaluation__submission__assessment__teacher_id=teacher.id,
             ).distinct()
         return queryset
 
@@ -410,16 +413,15 @@ class DashboardSummaryView(SchoolScopedQuerysetMixin, viewsets.ViewSet):
                 if teacher is None:
                     raise PermissionDenied("Teacher profile not found.")
                 assessments = assessments.filter(
-                    lesson_session__timetable_entry__classroom__teacher_assignments__teacher_id=teacher.id,
-                    lesson_session__timetable_entry__classroom__teacher_assignments__is_active=True,
+                    lesson_session__timetable_entry__teacher_subject__teacher_id=teacher.id,
+
+                    lesson_session__timetable_entry__teacher_subject__is_active=True,
                 ).distinct()
                 submissions = submissions.filter(
-                    enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
-                    enrollment__classroom__teacher_assignments__is_active=True,
+                    assessment__teacher_id=teacher.id,
                 ).distinct()
                 evaluations = evaluations.filter(
-                    submission__enrollment__classroom__teacher_assignments__teacher_id=teacher.id,
-                    submission__enrollment__classroom__teacher_assignments__is_active=True,
+                    submission__assessment__teacher_id=teacher.id,
                 ).distinct()
 
         return Response({
