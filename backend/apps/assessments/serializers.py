@@ -21,9 +21,32 @@ class RubricCriterionSerializer(serializers.ModelSerializer):
 class RubricSerializer(serializers.ModelSerializer):
     criteria = RubricCriterionSerializer(many=True, read_only=True)
 
+    def validate_assessment(self, assessment):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        role = get_user_role(user)
+        school = get_user_school(user)
+
+        if school is not None and assessment.teacher.school_id != school.id:
+            raise serializers.ValidationError("The assessment belongs to another institution.")
+
+        if role == UserRole.TEACHER:
+            teacher = getattr(user, "teacher_profile", None)
+            if teacher is None or assessment.teacher_id != teacher.id:
+                raise serializers.ValidationError("Teachers can only create rubrics for their own assessments.")
+
+        if self.instance is not None and assessment.id != self.instance.assessment_id:
+            raise serializers.ValidationError("A rubric cannot be moved to another assessment.")
+
+        if self.instance is None and Rubric.objects.filter(assessment=assessment).exists():
+            raise serializers.ValidationError("This assessment already has a rubric.")
+
+        return assessment
+
     class Meta:
         model = Rubric
-        fields = ["id", "title", "description", "criteria"]
+        fields = ["id", "assessment", "title", "description", "criteria"]
+        read_only_fields = ["id", "criteria"]
 
 
 class AssessmentSerializer(serializers.ModelSerializer):
@@ -42,21 +65,30 @@ class AssessmentSerializer(serializers.ModelSerializer):
         lesson = attrs.get("lesson_session", getattr(self.instance, "lesson_session", None))
         teacher = attrs.get("teacher", getattr(self.instance, "teacher", None))
 
+        if role == UserRole.ADMIN and teacher is None:
+            raise serializers.ValidationError({"teacher": "Select the teacher responsible for this assessment."})
+
+        if role == UserRole.TEACHER:
+            current_teacher = getattr(user, "teacher_profile", None)
+            if current_teacher is None:
+                raise serializers.ValidationError({"teacher": "Your teacher profile could not be found."})
+            if teacher is not None and teacher != current_teacher:
+                raise serializers.ValidationError({"teacher": "Teachers can only manage their own assessments."})
+            if lesson is not None and lesson.timetable_entry.teacher_subject.teacher_id != current_teacher.id:
+                raise serializers.ValidationError({"lesson_session": "You can only create assessments for lessons assigned to you."})
+            teacher = current_teacher
+
         if lesson is not None and teacher is not None:
             if lesson.timetable_entry.teacher_subject.teacher_id != teacher.id:
                 raise serializers.ValidationError({"teacher": "The assessment teacher must be the teacher assigned to this lesson."})
             if lesson.timetable_entry.classroom.school_id != teacher.school_id:
                 raise serializers.ValidationError("The assessment lesson and teacher must belong to the same institution.")
 
-        if role == UserRole.TEACHER:
-            current_teacher = getattr(user, "teacher_profile", None)
-            if teacher is not None and current_teacher is not None and teacher != current_teacher:
-                raise serializers.ValidationError({"teacher": "Teachers can only manage their own assessments."})
-
         return attrs
 
     class Meta:
         model = Assessment
+        extra_kwargs = {"teacher": {"required": False}}
         fields = [
             "id", "lesson_session", "lesson_session_title", "teacher", "teacher_name",
             "title", "description", "assessment_type", "status", "due_date",
