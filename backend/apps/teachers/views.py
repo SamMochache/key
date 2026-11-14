@@ -96,12 +96,15 @@ class TeacherSubjectAccessPermission(permissions.BasePermission):
     message = "You do not have permission to access teacher subject assignments."
 
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and get_user_role(request.user) in {
-            UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT
-        })
+        if not request.user or not request.user.is_authenticated:
+            return False
+        role = get_user_role(request.user)
+        if request.method in permissions.SAFE_METHODS:
+            return role in {UserRole.ADMIN, UserRole.TEACHER, UserRole.STUDENT}
+        return role == UserRole.ADMIN
 
 
-class TeacherSubjectViewSet(viewsets.ReadOnlyModelViewSet):
+class TeacherSubjectViewSet(viewsets.ModelViewSet):
     serializer_class = TeacherSubjectSerializer
     permission_classes = [TeacherSubjectAccessPermission]
 
