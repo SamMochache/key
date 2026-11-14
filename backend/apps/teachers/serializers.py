@@ -122,3 +122,51 @@ class TeacherSubjectSerializer(serializers.ModelSerializer):
             "academic_year", "academic_year_name", "term", "term_number", "role", "start_date", "end_date", "is_active",
         )
         read_only_fields = ("id", "teacher_name", "subject_name", "classroom_name", "academic_year_name", "term_number")
+
+    def validate(self, attrs):
+        from apps.assessments.permissions import get_user_school
+
+        teacher = attrs.get("teacher", getattr(self.instance, "teacher", None))
+        subject = attrs.get("subject", getattr(self.instance, "subject", None))
+        classroom = attrs.get("classroom", getattr(self.instance, "classroom", None))
+        academic_year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
+        term = attrs.get("term", getattr(self.instance, "term", None))
+        start_date = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end_date = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        request = self.context.get("request")
+
+        if teacher and classroom and teacher.school_id != classroom.school_id:
+            raise serializers.ValidationError({"teacher": "The teacher must belong to the classroom's institution."})
+        if teacher and teacher.status != "ACTIVE":
+            raise serializers.ValidationError({"teacher": "Only active teachers can receive subject assignments."})
+        if teacher and not teacher.user.is_active:
+            raise serializers.ValidationError({"teacher": "The teacher's user account is inactive."})
+        if classroom and not classroom.is_active:
+            raise serializers.ValidationError({"classroom": "Choose an active classroom."})
+        if subject and not subject.is_active:
+            raise serializers.ValidationError({"subject": "Choose an active subject."})
+        if classroom and academic_year and classroom.academic_year_id != academic_year.pk:
+            raise serializers.ValidationError({"academic_year": "The academic year must match the selected classroom."})
+        if classroom and academic_year and classroom.school_id != academic_year.school_id:
+            raise serializers.ValidationError({"academic_year": "The academic year must belong to the classroom's institution."})
+        if classroom and term and classroom.term_id != term.pk:
+            raise serializers.ValidationError({"term": "The term must match the selected classroom."})
+        if academic_year and term and term.academic_year_id != academic_year.pk:
+            raise serializers.ValidationError({"term": "The selected term must belong to the academic year."})
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError({"end_date": "The end date cannot be earlier than the start date."})
+        if all((teacher, subject, classroom, academic_year, term)):
+            duplicate = TeacherSubject.objects.filter(
+                teacher=teacher, subject=subject, classroom=classroom,
+                academic_year=academic_year, term=term,
+            )
+            if self.instance:
+                duplicate = duplicate.exclude(pk=self.instance.pk)
+            if duplicate.exists():
+                raise serializers.ValidationError({"non_field_errors": "This teacher is already assigned to this subject and classroom for the selected academic term."})
+
+        if request and classroom:
+            school = get_user_school(request.user)
+            if school is not None and classroom.school_id != school.pk:
+                raise serializers.ValidationError({"classroom": "You can only assign teachers within your institution."})
+        return attrs

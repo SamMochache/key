@@ -50,6 +50,8 @@ export function listTeacherSubjects(params: { classroom?: string; academicYear?:
   if (params.active) query.set('active', 'true');
   return list<ApiTeacherSubject>(`/teacher-subjects/${query.toString() ? `?${query}` : ''}`);
 }
+export function createTeacherSubject(payload: Record<string, unknown>) { return request<ApiTeacherSubject>('/teacher-subjects/', { method: 'POST', body: JSON.stringify(payload) }); }
+export function updateTeacherSubject(id: string, payload: Record<string, unknown>) { return request<ApiTeacherSubject>(`/teacher-subjects/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) }); }
 export function listTimetableEntries(params: { timetable?: string; classroom?: string; published?: boolean } = {}) {
   const query = new URLSearchParams();
   if (params.timetable) query.set('timetable', params.timetable);
