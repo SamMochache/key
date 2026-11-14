@@ -45,7 +45,7 @@ export function Teachers() {
   useEffect(() => { if (!isAdmin) return; Promise.all([listSchools(), listDepartments()]).then(([s, d]) => { setSchools(s); setDepartments(d); }).catch(() => undefined); }, [isAdmin]);
   const loadAssignments = async () => {
     try {
-      const [a, y, t, sub, cls] = await Promise.all([
+      const [a, sub, cls] = await Promise.all([
         listTeacherSubjects(), listSubjects({ active: true }), listClassrooms({ active: true }),
       ]);
       setAssignments(a); setSubjects(sub); setClassrooms(cls);
