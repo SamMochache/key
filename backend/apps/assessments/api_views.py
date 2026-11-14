@@ -28,8 +28,6 @@ from .permissions import (
     UserRole,
     get_user_role,
     get_user_school,
-    teacher_can_access_classroom,
-    teacher_can_access_enrollment,
 )
 from .serializers import (
     AssessmentEvaluationSerializer,
@@ -167,8 +165,15 @@ class AssessmentSubmissionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
                 raise PermissionDenied("You can only submit work for your own enrollment.")
         elif role == UserRole.TEACHER:
             enrollment = serializer.validated_data.get("enrollment")
-            if enrollment is None or not teacher_can_access_enrollment(self.request.user, enrollment):
-                raise PermissionDenied("You are not assigned to the submission learner's classroom.")
+            teacher = self.request.user.teacher_profile
+            assessment = serializer.validated_data.get("assessment")
+            if (
+                enrollment is None
+                or assessment is None
+                or assessment.teacher_id != teacher.id
+                or enrollment.classroom_id != assessment.lesson_session.timetable_entry.classroom_id
+            ):
+                raise PermissionDenied("You can only manage submissions for your own assessment and its classroom.")
         serializer.save(submitted_by=self.request.user)
 
     def perform_update(self, serializer):
@@ -179,8 +184,8 @@ class AssessmentSubmissionViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
             if submission.status == SubmissionStatus.GRADED:
                 raise PermissionDenied("A graded submission cannot be edited.")
         elif get_user_role(self.request.user) == UserRole.TEACHER:
-            if not teacher_can_access_enrollment(self.request.user, serializer.instance.enrollment):
-                raise PermissionDenied("You are not assigned to the submission learner's classroom.")
+            if serializer.instance.assessment.teacher_id != self.request.user.teacher_profile.id:
+                raise PermissionDenied("You can only manage submissions for your own assessments.")
         serializer.save()
 
 
@@ -248,15 +253,15 @@ class AssessmentEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
     def perform_create(self, serializer):
         if get_user_role(self.request.user) == UserRole.TEACHER:
             submission = serializer.validated_data.get("submission")
-            if submission is None or not teacher_can_access_enrollment(self.request.user, submission.enrollment):
-                raise PermissionDenied("You are not assigned to the submission learner's classroom.")
+            if submission is None or submission.assessment.teacher_id != self.request.user.teacher_profile.id:
+                raise PermissionDenied("You can only evaluate submissions for your own assessments.")
         evaluation = serializer.save()
         self._recalculate(evaluation)
 
     def perform_update(self, serializer):
         if get_user_role(self.request.user) == UserRole.TEACHER:
-            if not teacher_can_access_enrollment(self.request.user, serializer.instance.submission.enrollment):
-                raise PermissionDenied("You are not assigned to the evaluation learner's classroom.")
+            if serializer.instance.submission.assessment.teacher_id != self.request.user.teacher_profile.id:
+                raise PermissionDenied("You can only update evaluations for your own assessments.")
         evaluation = serializer.save()
         self._recalculate(evaluation)
 
@@ -318,16 +323,16 @@ class CriterionScoreViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         if get_user_role(self.request.user) == UserRole.TEACHER:
             evaluation = serializer.validated_data.get("evaluation")
-            if evaluation is None or not teacher_can_access_enrollment(self.request.user, evaluation.submission.enrollment):
-                raise PermissionDenied("You are not assigned to the evaluation learner's classroom.")
+            if evaluation is None or evaluation.submission.assessment.teacher_id != self.request.user.teacher_profile.id:
+                raise PermissionDenied("You can only manage evaluation records for your own assessments.")
         self._validate_score(serializer.validated_data.get("score"), serializer.validated_data.get("criterion"))
         serializer.save()
         self._recalculate(serializer.instance.evaluation)
 
     def perform_update(self, serializer):
         if get_user_role(self.request.user) == UserRole.TEACHER:
-            if not teacher_can_access_enrollment(self.request.user, serializer.instance.evaluation.submission.enrollment):
-                raise PermissionDenied("You are not assigned to the evaluation learner's classroom.")
+            if serializer.instance.evaluation.submission.assessment.teacher_id != self.request.user.teacher_profile.id:
+                raise PermissionDenied("You can only update evaluation records for your own assessments.")
         self._validate_score(
             serializer.validated_data.get("score", serializer.instance.score),
             serializer.validated_data.get("criterion", serializer.instance.criterion),
@@ -369,14 +374,14 @@ class CompetencyEvaluationViewSet(SchoolScopedQuerysetMixin, viewsets.ModelViewS
     def perform_create(self, serializer):
         if get_user_role(self.request.user) == UserRole.TEACHER:
             evaluation = serializer.validated_data.get("evaluation")
-            if evaluation is None or not teacher_can_access_enrollment(self.request.user, evaluation.submission.enrollment):
-                raise PermissionDenied("You are not assigned to the evaluation learner's classroom.")
+            if evaluation is None or evaluation.submission.assessment.teacher_id != self.request.user.teacher_profile.id:
+                raise PermissionDenied("You can only manage evaluation records for your own assessments.")
         serializer.save()
 
     def perform_update(self, serializer):
         if get_user_role(self.request.user) == UserRole.TEACHER:
-            if not teacher_can_access_enrollment(self.request.user, serializer.instance.evaluation.submission.enrollment):
-                raise PermissionDenied("You are not assigned to the evaluation learner's classroom.")
+            if serializer.instance.evaluation.submission.assessment.teacher_id != self.request.user.teacher_profile.id:
+                raise PermissionDenied("You can only update evaluation records for your own assessments.")
         serializer.save()
 
 
