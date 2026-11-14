@@ -80,10 +80,17 @@ class AssessmentSerializer(serializers.ModelSerializer):
             teacher = current_teacher
 
         if lesson is not None and teacher is not None:
-            if lesson.timetable_entry.teacher_subject.teacher_id != teacher.id:
+            assignment = lesson.timetable_entry.teacher_subject
+            if assignment.teacher_id != teacher.id or lesson.teacher_id != teacher.user_id:
                 raise serializers.ValidationError({"teacher": "The assessment teacher must be the teacher assigned to this lesson."})
             if lesson.timetable_entry.classroom.school_id != teacher.school_id:
                 raise serializers.ValidationError("The assessment lesson and teacher must belong to the same institution.")
+            if (
+                not assignment.is_active
+                or assignment.start_date > lesson.lesson_date
+                or (assignment.end_date is not None and assignment.end_date < lesson.lesson_date)
+            ):
+                raise serializers.ValidationError({"lesson_session": "The lesson's teacher-subject assignment was not active on the lesson date."})
 
         return attrs
 
