@@ -238,6 +238,26 @@ class TimetableLessonSyncTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["created"], 0)
 
+    def test_inactive_teacher_subject_assignment_does_not_generate_lesson(self):
+        self.assignment.is_active = False
+        self.assignment.save(update_fields=["is_active", "updated_at"])
+
+        response = self.sync_as(self.teacher_user, date(2026, 11, 23))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["created"], 0)
+        self.assertEqual(response.data["lessons"], [])
+
+    def test_timetable_effective_end_date_is_respected(self):
+        self.timetable.effective_to = date(2026, 11, 20)
+        self.timetable.save(update_fields=["effective_to", "updated_at"])
+
+        response = self.sync_as(self.teacher_user, date(2026, 11, 23))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["created"], 0)
+        self.assertEqual(response.data["lessons"], [])
+
     def test_teacher_can_list_own_generated_lesson_but_not_another_teachers(self):
         monday = date(2026, 11, 23)
         created = self.sync_as(self.teacher_user, monday)
