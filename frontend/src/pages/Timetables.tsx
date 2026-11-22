@@ -36,6 +36,19 @@ export function Timetables() {
 
   const currentTimetable = useMemo(() => timetables.find((item) => item.id === selectedTimetable) || null, [timetables, selectedTimetable]);
   const gridEntries = useMemo(() => entries.filter((item) => !selectedClassroom || item.classroom === selectedClassroom), [entries, selectedClassroom]);
+  const eligibleTeacherSubjects = useMemo(() => {
+    if (!currentTimetable || !entryForm.classroom) return [];
+    const selectedTermData = terms.find((item) => item.id === currentTimetable.term);
+    const timetableStart = currentTimetable.effective_from;
+    const timetableEnd = currentTimetable.effective_to || selectedTermData?.end_date;
+    if (!timetableStart || !timetableEnd) return [];
+    return assignments.filter((item) =>
+      item.classroom === entryForm.classroom &&
+      item.is_active &&
+      item.start_date <= timetableEnd &&
+      (!item.end_date || item.end_date >= timetableStart)
+    );
+  }, [assignments, currentTimetable, entryForm.classroom, terms]);
 
   useEffect(() => {
     Promise.all([listAcademicYears(), listSchools()]).then(([yearData, schoolData]) => {
@@ -190,8 +203,10 @@ export function Timetables() {
         <Select label="Day" value={entryForm.weekday} onChange={(value) => setEntryForm({ ...entryForm, weekday: value as WeekDay })}>{DAYS.map((day) => <option key={day.key} value={day.key}>{day.label}</option>)}</Select>
         <Select label="Period" value={entryForm.period} onChange={(value) => setEntryForm({ ...entryForm, period: value })}><option value="">Select period</option>{periods.filter((item) => !item.is_break).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.start_time.slice(0, 5)}–{item.end_time.slice(0, 5)}</option>)}</Select>
         <Select label="Classroom" value={entryForm.classroom} onChange={(value) => setEntryForm({ ...entryForm, classroom: value, teacher_subject: '' })}>{classrooms.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select>
-        <Select label="Teacher / Subject" value={entryForm.teacher_subject} onChange={(value) => setEntryForm({ ...entryForm, teacher_subject: value })}><option value="">Select assignment</option>{assignments.filter((item) => item.classroom === entryForm.classroom).map((item) => <option key={item.id} value={item.id}>{item.subject_name} · {item.teacher_name}</option>)}</Select>
+        <Select label="Teacher / Subject" value={entryForm.teacher_subject} onChange={(value) => setEntryForm({ ...entryForm, teacher_subject: value })}><option value="">Select assignment</option>{eligibleTeacherSubjects.map((item) => <option key={item.id} value={item.id}>{item.subject_name} · {item.teacher_name}</option>)}</Select>
         {entryForm.classroom && !assignments.some((item) => item.classroom === entryForm.classroom) && <p className="text-xs text-amber-600 dark:text-amber-400">No active teacher–subject assignments exist for this classroom in the selected academic year and term. Create or activate a teacher-subject assignment first, then return here.</p>}
+        {entryForm.classroom && assignments.some((item) => item.classroom === entryForm.classroom && item.is_active) && eligibleTeacherSubjects.length === 0 && <p className="text-xs text-amber-600 dark:text-amber-400">The active teacher–subject assignments for this classroom do not overlap this timetable’s effective dates. Update the assignment start/end dates or the timetable’s effective period before adding this lesson.</p>}
+        {entryForm.classroom && eligibleTeacherSubjects.length > 0 && !eligibleTeacherSubjects.some((item) => item.id === entryForm.teacher_subject) && <p className="text-xs text-slate-500 dark:text-slate-400">Only assignments active during this timetable’s effective period are available.</p>}
         <Input label="Room (optional)" value={entryForm.room} onChange={(value) => setEntryForm({ ...entryForm, room: value })} />
         <div className="flex justify-end gap-2 pt-2"><Button variant="secondary" onClick={() => setEntryOpen(false)}>Cancel</Button><Button onClick={addEntry} disabled={saving || !entryForm.period || !entryForm.classroom || !entryForm.teacher_subject}>{saving ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <SaveIcon className="h-4 w-4" />} Save lesson</Button></div>
       </div>
