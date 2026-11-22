@@ -1,3 +1,5 @@
+import json
+
 from django.test import SimpleTestCase
 
 from apps.ai_narrative_report_api import AIRuntimeError, _extract_gemini_text, _parse_narrative
@@ -14,11 +16,9 @@ VALID_NARRATIVE = {
 
 class ParseNarrativeTests(SimpleTestCase):
     def test_parses_valid_json(self):
-        self.assertEqual(_parse_narrative(__import__("json").dumps(VALID_NARRATIVE)), VALID_NARRATIVE)
+        self.assertEqual(_parse_narrative(json.dumps(VALID_NARRATIVE)), VALID_NARRATIVE)
 
     def test_parses_json_inside_markdown_fence(self):
-        import json
-
         output = "```json\n" + json.dumps(VALID_NARRATIVE) + "\n```"
         self.assertEqual(_parse_narrative(output), VALID_NARRATIVE)
 
