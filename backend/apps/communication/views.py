@@ -117,7 +117,7 @@ class CommunicationMessageViewSet(viewsets.ModelViewSet):
         notify(
             recipient=recipient,
             school=school,
-            title=f"New message from {request.user.get_full_name() or request.user.email}",
+            title=f"New message from {request.user.full_name or request.user.email}",
             body=serializer.instance.subject,
             notification_type=Notification.Type.MESSAGE,
             link="/communication",
