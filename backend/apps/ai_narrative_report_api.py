@@ -57,13 +57,43 @@ def _provider_settings():
 
 
 def _extract_gemini_text(payload):
-    parts = []
-    for candidate in payload.get("candidates", []):
-        for part in candidate.get("content", {}).get("parts", []):
-            value = part.get("text")
-            if isinstance(value, str):
-                parts.append(value)
-    return "".join(parts).strip()
+    prompt_feedback = payload.get("promptFeedback") or {}
+    block_reason = prompt_feedback.get("blockReason")
+    if block_reason:
+        raise AIRuntimeError(
+            f"Gemini blocked the narrative prompt ({block_reason}). "
+            "Review the supplied report facts and try again."
+        )
+
+    candidates = payload.get("candidates") or []
+    if not candidates:
+        raise AIRuntimeError("Gemini returned no narrative candidate.")
+
+    candidate = candidates[0]
+    finish_reason = candidate.get("finishReason")
+    if finish_reason == "MAX_TOKENS":
+        raise AIRuntimeError(
+            "Gemini truncated the narrative before completing it. "
+            "The report could not be generated; try again."
+        )
+    if finish_reason in {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}:
+        raise AIRuntimeError(
+            f"Gemini did not generate the narrative ({finish_reason}). "
+            "Review the supplied report facts and try again."
+        )
+    if finish_reason and finish_reason != "STOP":
+        raise AIRuntimeError(
+            f"Gemini stopped the narrative generation ({finish_reason}). "
+            "Please try again."
+        )
+
+    parts = (candidate.get("content") or {}).get("parts") or []
+    text_parts = [
+        part["text"]
+        for part in parts
+        if isinstance(part, dict) and isinstance(part.get("text"), str)
+    ]
+    return "".join(text_parts).strip()
 
 
 def _extract_openai_text(payload):
@@ -80,17 +110,48 @@ def _extract_openai_text(payload):
 
 
 def _parse_narrative(output):
-    if not output:
+    if not isinstance(output, str) or not output.strip():
         raise AIRuntimeError("The AI provider returned an empty narrative.")
-    try:
-        result = json.loads(output)
-    except json.JSONDecodeError as exc:
-        raise AIRuntimeError("The AI provider returned an invalid narrative format.") from exc
 
     required = {"summary", "strengths", "development_areas", "next_steps", "teacher_note"}
+    text = output.strip()
+    try:
+        result = json.loads(text)
+    except json.JSONDecodeError:
+        # Some model responses wrap otherwise valid structured output in prose
+        # or Markdown fences. Recover only a complete JSON object; never repair
+        # or invent missing narrative content.
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].lstrip().startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        decoder = json.JSONDecoder()
+        object_start = text.find("{")
+        if object_start < 0:
+            raise AIRuntimeError("The AI provider returned an invalid narrative format.")
+        try:
+            result, _ = decoder.raw_decode(text[object_start:])
+        except json.JSONDecodeError as exc:
+            raise AIRuntimeError("The AI provider returned an invalid narrative format.") from exc
+
+    if not isinstance(result, dict):
+        raise AIRuntimeError("The AI provider returned an invalid narrative format.")
     if not required.issubset(result):
         raise AIRuntimeError("The AI provider returned an incomplete narrative.")
-    return {key: str(result[key]).strip() for key in required}
+
+    narrative = {}
+    for key in required:
+        value = result[key]
+        if not isinstance(value, str) or not value.strip():
+            raise AIRuntimeError(
+                f"The AI provider returned an empty or invalid '{key}' section."
+            )
+        narrative[key] = value.strip()
+    return narrative
 
 
 def _generate_narrative(facts):
@@ -143,7 +204,7 @@ Each field should be a concise paragraph. Refer to the learner by first name onl
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "responseSchema": schema,
-                "maxOutputTokens": 900,
+                "maxOutputTokens": 1400,
             },
         }).encode("utf-8")
         endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
