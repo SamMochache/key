@@ -116,7 +116,7 @@ export function Timetables() {
   };
 
   const addEntry = async () => {
-    if (!selectedTimetable || !entryForm.period || !entryForm.classroom || !entryForm.teacher_subject) return;
+    if (!selectedTimetable || !entryForm.period || !entryForm.classroom || !eligibleTeacherSubjects.some((item) => item.id === entryForm.teacher_subject)) return;
     setSaving(true); setError('');
     try {
       await createTimetableEntry({ timetable: selectedTimetable, weekday: entryForm.weekday, period: entryForm.period, classroom: entryForm.classroom, teacher_subject: entryForm.teacher_subject, room: entryForm.room });
@@ -208,7 +208,7 @@ export function Timetables() {
         {entryForm.classroom && assignments.some((item) => item.classroom === entryForm.classroom && item.is_active) && eligibleTeacherSubjects.length === 0 && <p className="text-xs text-amber-600 dark:text-amber-400">The active teacher–subject assignments for this classroom do not overlap this timetable’s effective dates. Update the assignment start/end dates or the timetable’s effective period before adding this lesson.</p>}
         {entryForm.classroom && eligibleTeacherSubjects.length > 0 && !eligibleTeacherSubjects.some((item) => item.id === entryForm.teacher_subject) && <p className="text-xs text-slate-500 dark:text-slate-400">Only assignments active during this timetable’s effective period are available.</p>}
         <Input label="Room (optional)" value={entryForm.room} onChange={(value) => setEntryForm({ ...entryForm, room: value })} />
-        <div className="flex justify-end gap-2 pt-2"><Button variant="secondary" onClick={() => setEntryOpen(false)}>Cancel</Button><Button onClick={addEntry} disabled={saving || !entryForm.period || !entryForm.classroom || !entryForm.teacher_subject}>{saving ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <SaveIcon className="h-4 w-4" />} Save lesson</Button></div>
+        <div className="flex justify-end gap-2 pt-2"><Button variant="secondary" onClick={() => setEntryOpen(false)}>Cancel</Button><Button onClick={addEntry} disabled={saving || !entryForm.period || !entryForm.classroom || !eligibleTeacherSubjects.some((item) => item.id === entryForm.teacher_subject)}>{saving ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <SaveIcon className="h-4 w-4" />} Save lesson</Button></div>
       </div>
     </Modal>}
 
