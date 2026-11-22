@@ -35,6 +35,14 @@ function addDays(value: string, amount: number) {
   return localDateValue(date);
 }
 
+function defaultWeekStart() {
+  const today = new Date();
+  const monday = startOfWeek(localDateValue(today));
+  // On Sunday, default to the upcoming teaching week rather than the week
+  // that has just ended, so tomorrow's Monday lessons are visible.
+  return today.getDay() === 0 ? addDays(monday, 7) : monday;
+}
+
 function formatDay(value: string) {
   const [year, month, day] = value.split('-').map(Number);
   return new Intl.DateTimeFormat('en', {
@@ -65,7 +73,7 @@ function statusLabel(status: LessonStatus) {
 
 export function Lessons() {
   const { role } = useApp();
-  const [selectedDate, setSelectedDate] = useState(() => startOfWeek(localDateValue()));
+  const [selectedDate, setSelectedDate] = useState(defaultWeekStart);
   const [lessons, setLessons] = useState<ApiLesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
