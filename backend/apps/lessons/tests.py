@@ -170,18 +170,13 @@ class TimetableLessonSyncTests(APITestCase):
                 self.assertEqual(response.data["lessons"][0]["weekday"], expected_weekday)
 
     def test_monday_entry_is_not_generated_for_friday_date(self):
+        self.entries[WeekDay.FRIDAY].delete()
+
         response = self.sync_as(self.teacher_user, date(2026, 11, 27))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["created"], 1)
-        self.assertEqual(
-            response.data["lessons"][0]["timetable_entry"],
-            str(self.entries[WeekDay.FRIDAY].id),
-        )
-        self.assertNotEqual(
-            response.data["lessons"][0]["timetable_entry"],
-            str(self.entries[WeekDay.MONDAY].id),
-        )
+        self.assertEqual(response.data["created"], 0)
+        self.assertEqual(response.data["lessons"], [])
 
     def test_unpublished_timetable_does_not_generate_lessons(self):
         self.timetable.status = TimetableStatus.DRAFT
