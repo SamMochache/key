@@ -96,7 +96,7 @@ class AssessmentResultsReportView(views.APIView):
             story.append(info_table([["Class", classroom.name, "Code", classroom.code, "Stage", classroom.cambridge_stage.name], ["Academic Year", classroom.academic_year.name, "Term", f"Term {classroom.term.term_number}", "Assessments", str(len(assessments))]], [25 * mm, 55 * mm, 22 * mm, 45 * mm, 22 * mm, 55 * mm]))
             story.append(Spacer(1, 4 * mm))
         def pct(value): return f"{value:.1f}%" if value is not None else "—"
-        story.append(summary_table([["Published Results", str(summary["count"]), "Average", pct(summary["average"]), "Highest", pct(summary["highest"]), "Lowest", pct(summary["lowest"])]], [31 * mm, 27 * mm, 25 * mm, 27 * mm, 25 * mm, 27 * mm, 25 * mm, 27 * mm]))
+        story.append(summary_table(["Published Results", str(summary["count"]), "Average", pct(summary["average"]), "Highest", pct(summary["highest"]), "Lowest", pct(summary["lowest"])] , [31 * mm, 27 * mm, 25 * mm, 27 * mm, 25 * mm, 27 * mm, 25 * mm, 27 * mm]))
         story.append(Paragraph("Student Results", styles["heading"]))
         table_data = [["Admission", "Student", "Assessment", "Type", "Percentage"]] + rows
         if len(table_data) == 1:
