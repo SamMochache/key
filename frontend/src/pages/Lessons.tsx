@@ -20,11 +20,27 @@ function localDateValue(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function startOfWeek(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  const daysSinceMonday = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - daysSinceMonday);
+  return localDateValue(date);
+}
+
 function addDays(value: string, amount: number) {
   const [year, month, day] = value.split('-').map(Number);
   const date = new Date(year, month - 1, day);
   date.setDate(date.getDate() + amount);
   return localDateValue(date);
+}
+
+function defaultWeekStart() {
+  const today = new Date();
+  const monday = startOfWeek(localDateValue(today));
+  // On Sunday, default to the upcoming teaching week rather than the week
+  // that has just ended, so tomorrow's Monday lessons are visible.
+  return today.getDay() === 0 ? addDays(monday, 7) : monday;
 }
 
 function formatDay(value: string) {
@@ -52,12 +68,12 @@ function statusTone(status: LessonStatus): 'brand' | 'emerald' | 'warm' | 'slate
 }
 
 function statusLabel(status: LessonStatus) {
-  return status.replaceAll('_', ' ').toLowerCase().replace(/\\b\\w/g, (letter) => letter.toUpperCase());
+  return status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 export function Lessons() {
   const { role } = useApp();
-  const [selectedDate, setSelectedDate] = useState(localDateValue());
+  const [selectedDate, setSelectedDate] = useState(defaultWeekStart);
   const [lessons, setLessons] = useState<ApiLesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
@@ -72,6 +88,7 @@ export function Lessons() {
     setLoading(true);
     setError(null);
     try {
+      const dayErrors: string[] = [];
       const results = await Promise.all(weekDates.map(async (lessonDate) => {
         const [year, month, day] = lessonDate.split('-').map(Number);
         const weekday = new Date(year, month - 1, day).getDay();
@@ -79,13 +96,18 @@ export function Lessons() {
           try {
             await syncLessonDay(lessonDate);
           } catch (syncError) {
-            // Continue loading already-created sessions if timetable syncing is unavailable.
-            setError(syncError instanceof Error ? syncError.message : 'Some timetable lessons could not be synchronised.');
+            dayErrors.push(syncError instanceof Error ? syncError.message : 'Timetable synchronisation failed.');
           }
         }
-        return listLessons({ lessonDate });
+        try {
+          return await listLessons({ lessonDate });
+        } catch (listError) {
+          dayErrors.push(listError instanceof Error ? listError.message : `Unable to load lessons for ${lessonDate}.`);
+          return [];
+        }
       }));
       setLessons(results.flat());
+      if (dayErrors.length) setError(dayErrors[0]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load lessons.');
       setLessons([]);
@@ -142,7 +164,7 @@ export function Lessons() {
     <div>
       <PageHeader
         title="Lessons"
-        description="Your teaching sessions for the selected day and the six days ahead."
+        description="Your teaching sessions from Monday through Sunday for the selected week."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-sm font-semibold text-slate-500" htmlFor="lessons-week-start">Week starting</label>
@@ -150,7 +172,7 @@ export function Lessons() {
               id="lessons-week-start"
               type="date"
               value={selectedDate}
-              onChange={(event) => setSelectedDate(event.target.value)}
+              onChange={(event) => setSelectedDate(startOfWeek(event.target.value))}
               className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-brand-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
             />
             <Button variant="secondary" onClick={loadLessons} disabled={loading}>Refresh</Button>
