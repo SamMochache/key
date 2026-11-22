@@ -27,6 +27,10 @@ class TimetableLessonSyncTests(APITestCase):
             short_name="SYNC",
             city="Nairobi",
         )
+        self.admin = User.objects.create_superuser(
+            email="admin@example.com",
+            password="StrongPassword123!",
+        )
         self.teacher_user = User.objects.create_user(
             email="teacher@example.com",
             password="StrongPassword123!",
@@ -142,6 +146,43 @@ class TimetableLessonSyncTests(APITestCase):
             {"lesson_date": lesson_date.isoformat()},
             format="json",
         )
+
+    def test_admin_can_publish_timetable_and_teacher_syncs_its_monday_entry(self):
+        self.timetable.status = TimetableStatus.DRAFT
+        self.timetable.save(update_fields=["status", "updated_at"])
+
+        self.client.force_authenticate(self.admin)
+        publish_response = self.client.post(
+            reverse("timetable-publish", kwargs={"pk": self.timetable.pk}),
+            {},
+            format="json",
+        )
+
+        self.assertEqual(publish_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(publish_response.data["status"], TimetableStatus.PUBLISHED)
+        self.assertEqual(self.timetable.entries.count(), 3)
+
+        sync_response = self.sync_as(self.teacher_user, date(2026, 11, 23))
+        self.assertEqual(sync_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(sync_response.data["created"], 1)
+        self.assertEqual(sync_response.data["lessons"][0]["weekday"], WeekDay.MONDAY)
+
+    def test_entry_outside_term_dates_does_not_generate_lesson(self):
+        response = self.sync_as(self.teacher_user, date(2026, 12, 7))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["created"], 0)
+        self.assertEqual(response.data["lessons"], [])
+
+    def test_inactive_classroom_does_not_generate_lesson(self):
+        self.classroom.is_active = False
+        self.classroom.save(update_fields=["is_active", "updated_at"])
+
+        response = self.sync_as(self.teacher_user, date(2026, 11, 23))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["created"], 0)
+        self.assertEqual(response.data["lessons"], [])
 
     def test_monday_timetable_entry_generates_monday_lesson_idempotently(self):
         monday = date(2026, 11, 23)
