@@ -14,6 +14,9 @@ export function GrowthLineChart({ height = 260, data = [] }: { height?: number; 
   return <ResponsiveContainer width="100%" height={height}><LineChart data={data} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" vertical={false} /><XAxis dataKey="term" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} /><YAxis domain={[0, 100]} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} /><Tooltip contentStyle={tooltipStyle} /><Line type="monotone" dataKey="practical" stroke="#10B981" strokeWidth={2.5} dot={false} name="Practical Life" /><Line type="monotone" dataKey="language" stroke="#1D4ED8" strokeWidth={2.5} dot={false} name="Language" /><Line type="monotone" dataKey="math" stroke="#F59E0B" strokeWidth={2.5} dot={false} name="Mathematics" /><Line type="monotone" dataKey="culture" stroke="#8b5cf6" strokeWidth={2.5} dot={false} name="Culture" /></LineChart></ResponsiveContainer>;
 }
 export function CompetencyRadarChart({ height = 260, data = [] }: { height?: number; data?: CompetencyPoint[] }) {
+  if (data.length === 0) {
+    return <div className="flex items-center justify-center text-sm text-slate-400" style={{ height }}>No competency data available yet.</div>;
+  }
   return <ResponsiveContainer width="100%" height={height}><RadarChart data={data} outerRadius="72%"><PolarGrid stroke="rgba(148,163,184,0.25)" /><PolarAngleAxis dataKey="skill" tick={{ fontSize: 11, fill: '#94a3b8' }} /><PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} /><Radar dataKey="value" stroke="#10B981" fill="#10B981" fillOpacity={0.25} strokeWidth={2} /><Tooltip contentStyle={tooltipStyle} /></RadarChart></ResponsiveContainer>;
 }
 export function ClassCompareBar({ height = 260, data = [] }: { height?: number; data?: ClassPoint[] }) {
