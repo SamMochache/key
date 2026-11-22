@@ -68,7 +68,7 @@ function statusTone(status: LessonStatus): 'brand' | 'emerald' | 'warm' | 'slate
 }
 
 function statusLabel(status: LessonStatus) {
-  return status.replaceAll('_', ' ').toLowerCase().replace(/\\b\\w/g, (letter) => letter.toUpperCase());
+  return status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 export function Lessons() {
@@ -88,6 +88,7 @@ export function Lessons() {
     setLoading(true);
     setError(null);
     try {
+      const dayErrors: string[] = [];
       const results = await Promise.all(weekDates.map(async (lessonDate) => {
         const [year, month, day] = lessonDate.split('-').map(Number);
         const weekday = new Date(year, month - 1, day).getDay();
@@ -95,13 +96,18 @@ export function Lessons() {
           try {
             await syncLessonDay(lessonDate);
           } catch (syncError) {
-            // Continue loading already-created sessions if timetable syncing is unavailable.
-            setError(syncError instanceof Error ? syncError.message : 'Some timetable lessons could not be synchronised.');
+            dayErrors.push(syncError instanceof Error ? syncError.message : 'Timetable synchronisation failed.');
           }
         }
-        return listLessons({ lessonDate });
+        try {
+          return await listLessons({ lessonDate });
+        } catch (listError) {
+          dayErrors.push(listError instanceof Error ? listError.message : `Unable to load lessons for ${lessonDate}.`);
+          return [];
+        }
       }));
       setLessons(results.flat());
+      if (dayErrors.length) setError(dayErrors[0]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load lessons.');
       setLessons([]);
