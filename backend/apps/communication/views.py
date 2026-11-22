@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -113,15 +114,16 @@ class CommunicationMessageViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(data={**data, "school": str(school.pk), "recipient": str(recipient.pk)})
         serializer.is_valid(raise_exception=True)
-        serializer.save(sender=request.user)
-        notify(
-            recipient=recipient,
-            school=school,
-            title=f"New message from {request.user.full_name or request.user.email}",
-            body=serializer.instance.subject,
-            notification_type=Notification.Type.MESSAGE,
-            link="/communication",
-        )
+        with transaction.atomic():
+            serializer.save(sender=request.user)
+            notify(
+                recipient=recipient,
+                school=school,
+                title=f"New message from {request.user.full_name or request.user.email}",
+                body=serializer.instance.subject,
+                notification_type=Notification.Type.MESSAGE,
+                link="/communication",
+            )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
